@@ -7,7 +7,7 @@ service = TrendingService()
 
 
 @router.post("/train")
-def train_trending(payload: TrainTrendingRequest):
+def train_trending(payload:TrainTrendingRequest ):
     try:
         result = service.trainTrendingProducts(
             payload.settings,

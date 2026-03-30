@@ -1,4 +1,4 @@
-from adapters.meili.client import client
+from ..meili.client import client
 
 
 def search_meili(

@@ -7,8 +7,8 @@ from ..adapters.meili.indexer import push_to_meili
 from types import SimpleNamespace
 
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CSV_DIR = os.path.join(BASE_DIR, "data", "processed")
+# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# CSV_DIR = os.path.join(BASE_DIR, "data", "processed")
 
 
 def ensure_datetime(df: pd.DataFrame, col: str):
@@ -29,7 +29,7 @@ def aggregate_signals(df: pd.DataFrame, value_col: str,
     return pd.concat([agg_24h, agg_3d, agg_7d], axis=1).fillna(0).reset_index()
 
 
-def run_trending_pipeline(TrendingBeautyWeights: dict,client: str):
+def run_trending_pipeline(TrendingWeights: dict,client: str):
     # Load data
     catalog_df     = load_csv("catalog.csv")
     analytics_df   = load_csv("analytics.csv")
@@ -84,7 +84,7 @@ def run_trending_pipeline(TrendingBeautyWeights: dict,client: str):
         .fillna(0)
     )
     
-    weights = SimpleNamespace(**TrendingBeautyWeights)
+    weights = SimpleNamespace(**TrendingWeights)
     
 
     internal_weights = {
@@ -214,7 +214,7 @@ def run_trending_pipeline(TrendingBeautyWeights: dict,client: str):
         meili_df = final_selected[[
             "skuid", "category_l1", "category_l2", "category_l3",
             "display_title", "brand", "selling_price",
-            "trending_score", "is_trending", "is_threshold_relaxed"
+            "trending_score", "is_trending", "is_threshold_relaxed","image_urls"
         ]].copy()
 
         docs = meili_df.to_dict(orient="records")

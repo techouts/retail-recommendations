@@ -1,5 +1,7 @@
 from ..exceptions.exceptions import BadRequestException, PipelineException
 from ..pipelines.trending_pipeline import run_trending_pipeline
+from ..pipelines.best_seller_pipeline import run_bestseller_pipeline
+
 
 class TrendingService:
 
@@ -19,3 +21,23 @@ class TrendingService:
 
     # def trendingDataPreview(self,client:str):
     #     try:
+
+
+
+
+class BestSellerService:
+
+    def trainBestSellerProducts(self, weights: dict, time_window: dict, client: str):
+
+        print("Best Seller Service Started")
+
+        result_df = run_bestseller_pipeline(weights, time_window,client)
+
+        print(" Pipeline Completed")
+
+        return {
+            "message": "Best Sellers training complete",
+            "count": len(result_df),
+            "client": client,
+            "data": result_df.to_dict(orient="records")
+        }

@@ -25,3 +25,4 @@ def fetch_trending_products(client: str = Query(...)):
         return result
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
+    

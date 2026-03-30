@@ -10,3 +10,7 @@ router.include_router(
     tags=["Trending"]
 )
 
+
+
+
+router.include_router()

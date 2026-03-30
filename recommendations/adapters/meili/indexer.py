@@ -1,7 +1,7 @@
 from .client import client
 
 
-def push_to_meili(docs, index_name: str, primary_key: str = "skuid"):
+def push_to_meili(docs, index_name: str, primary_key: str = "sku"):
     """
     Push documents to meili index
     """
@@ -17,13 +17,27 @@ def push_to_meili(docs, index_name: str, primary_key: str = "skuid"):
     except Exception:
         client.create_index(index_name, {"primaryKey": primary_key})
         print(f" Created index: {index_name}")
+        
+    index.update_filterable_attributes(["l1", "l2", "l3", "brand"])
 
     # Add documents
     task = index.add_documents(docs)
+    
+    # print("Docs sample:", docs[:2])
+    # print("Task:", task)
 
     print(f"🚀 Indexing started... Task UID: {task.task_uid}")
 
     # Optional: wait for completion
     client.wait_for_task(task.task_uid)
+    
+    # client.delete_index("ssb_deal_of_day")
+    
+    task_status = client.get_task(task.task_uid)
+    # print("Task status:", task_status)
+    
+    print(index.get_stats())
+    
+    client.delete_index("ssb1_deal_of_day")
 
     print(" Documents successfully indexed in meili")

@@ -30,6 +30,7 @@ def aggregate_signals(df: pd.DataFrame, value_col: str,
 
 
 def run_trending_pipeline(TrendingBeautyWeights: dict,client: str):
+
     # Load data
     catalog_df     = load_csv("catalog.csv")
     analytics_df   = load_csv("analytics.csv")
@@ -207,7 +208,7 @@ def run_trending_pipeline(TrendingBeautyWeights: dict,client: str):
 
     if not final_selected.empty:
 
-        # ✅ Fix JSON issues
+        #  Fix JSON issues
         final_selected = final_selected.replace([np.inf, -np.inf], None)
         final_selected = final_selected.where(final_selected.notna(), None)
 

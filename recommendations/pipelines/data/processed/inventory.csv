@@ -1,4 +1,4 @@
-skuid,warehouse_id,stock_quantity,reserved_quantity,created_at
+skuid,warehouse_id,stock_quantity,reserved_quantity,Timestamp
 62316095,WH1,0,2,2026-03-18T10:15:32.436022
 1982137274,WH2,23,2,2026-03-18T10:15:32.436022
 059035342X,WH3,41,3,2026-03-18T10:15:32.436022

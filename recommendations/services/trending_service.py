@@ -35,6 +35,9 @@ class BestSellerService:
 
         print(" Pipeline Completed")
 
+
+
+
         return {
             "message": "Best Sellers training complete",
             "count": len(result_df),

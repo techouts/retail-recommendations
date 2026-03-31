@@ -155,8 +155,6 @@ def fetch_bs_product_id(
             status_code=404,
             detail=f"No products found for skuid: {', '.join(skuid_list)}"
         )
-
-   
     return {
         "count": len(response["hits"]),
         "data": response["hits"]

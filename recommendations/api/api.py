@@ -44,7 +44,7 @@ def train_popular_categories(payload: TrainRecommendationsRequest):
         raise HTTPException(status_code=401, detail=str(e))
     return result
 
-@router.post("/trending/train-dealofday")
+@router.post("/dealofday/train")
 def train_dealofday(payload: dict):
     '''
     Expected payload:

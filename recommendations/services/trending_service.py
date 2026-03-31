@@ -7,7 +7,7 @@ class TrendingService:
 
     def trainTrendingProducts(self, trending_settings: dict, client: str):
         try:
-            data = run_category_trending_pipeline(trending_settings, client)
+            data = run_trending_pipeline(trending_settings, client)
 
             return {
                 "success": True,

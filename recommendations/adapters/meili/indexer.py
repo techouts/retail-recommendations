@@ -3,25 +3,24 @@ import pandas as pd
 import numpy as np
 
 
-def push_to_meili(docs, index_name: str, primary_key: str = None):
+def push_to_meili(docs, index_name: str, primary_key: str = "sku"):
+    """
+    Push documents to meili index
+    """
     if not docs:
         print("❌ No documents to index.")
         return
 
-    # ---------------------------
-    # Ensure index exists
-    # ---------------------------
-    try:
-        index = client.get_index(index_name)
-
-    except Exception:
-        print(f"🆕 Creating index: {index_name}")
-        if primary_key:
-            client.create_index(index_name, {"primaryKey": primary_key})
-        else:
-            client.create_index(index_name)
-
     index = client.index(index_name)
+
+    # Create index if not exists
+    try:
+        index.get_stats()
+    except Exception:
+        client.create_index(index_name, {"primaryKey": primary_key})
+        print(f" Created index: {index_name}")
+        
+    index.update_filterable_attributes(["l1", "l2", "l3", "brand"])
 
     # ---------------------------
     # Clean documents
@@ -42,12 +41,25 @@ def push_to_meili(docs, index_name: str, primary_key: str = None):
     # Push
     # ---------------------------
     task = index.add_documents(clean_docs)
+    # Add documents
+    task = index.add_documents(docs)
+    
+    # print("Docs sample:", docs[:2])
+    # print("Task:", task)
+
     print(f"🚀 Indexing started... Task UID: {task.task_uid}")
 
     result = client.wait_for_task(task.task_uid)
+    # Optional: wait for completion
+    client.wait_for_task(task.task_uid)
+    
+    # client.delete_index("ssb_deal_of_day")
+    
+    task_status = client.get_task(task.task_uid)
+    # print("Task status:", task_status)
+    
+    print(index.get_stats())
+    
+    client.delete_index("ssb1_deal_of_day")
 
-    if result.status == "succeeded":
-        print(f"✅ Indexed {len(clean_docs)} documents into '{index_name}'")
-    else:
-        print("❌ Indexing failed!")
-        print(result.error)
+    print(" Documents successfully indexed in meili")

@@ -15,31 +15,32 @@ class DealOfDayService:
         except PipelineException as e:
             raise PipelineException(f"Deal of Day pipleline failed : {str(e)}")
         
-def dealofday_fetch_l1(index_name : str, l1list : list , limit: int , offset:int ):
-    query=""
-    # filters = f"l1 IN {l1list}"
-    filters = f'l1 IN {l1list}'
-    response = search_meili(index_name=index_name,query=query,filters=filters,limit=limit,offset=offset)
-    return response
+    def dealofday_fetch_l1(self, index_name : str, l1list : list , limit: int , offset:int ):
+        query=""
+        # filters = f"l1 IN {l1list}"
+        filters = f'l1 IN {l1list}'
+        response = search_meili(index_name=index_name,query=query,filters=filters,limit=limit,offset=offset)
+        return response
 
-def dealofday_fetch_l2(index_name : str, l2list : list , limit : int, offset :int):
-    query=""
-    filters = f'l2 IN {l2list}'
-    response = search_meili(index_name=index_name,query=query,filters=filters,limit=limit,offset=offset)
-    return response
+    def dealofday_fetch_l2(self,index_name : str, l2list : list , limit : int, offset :int):
+        query=""
+        filters = f'l2 IN {l2list}'
+        response = search_meili(index_name=index_name,query=query,filters=filters,limit=limit,offset=offset)
+        return response
 
-def dealofday_fetch_l3(index_name : str , l3list : list , limit : int, offset : int):
-    query=""
-    filters = f'l3 IN {l3list}'
-    response = search_meili(index_name=index_name,query=query,filters=filters,limit=limit,offset=offset)
-    return response
+    def dealofday_fetch_l3(self,index_name : str , l3list : list , limit : int, offset : int):
+        query=""
+        filters = f'l3 IN {l3list}'
+        response = search_meili(index_name=index_name,query=query,filters=filters,limit=limit,offset=offset)
+        return response
 
-def dealofday_fetch(index_name : str, l1list : list, l2list: list , limit : int, offset : int):
-    query=""
-    l1_filter = f"l1 IN {json.dumps(l1list)}"
-    l2_filter = f"l2 IN {json.dumps(l2list)}"
+    def dealofday_fetch(self,index_name : str, l1list : list, l2list: list , l3list: list,limit : int, offset : int):
+        query=""
+        l1_filter = f"l1 IN {json.dumps(l1list)}"
+        l2_filter = f"l2 IN {json.dumps(l2list)}"
+        l3_filter = f"l3 IN {json.dumps(l3list)}"
 
-    filters = f"{l1_filter} AND {l2_filter}"
-    
-    response = search_meili(index_name=index_name,query=query,filters=filters,limit=limit,offset=offset)
-    return response
+        filters = f"{l1_filter} AND {l2_filter} AND {l3_filter}"
+        
+        response = search_meili(index_name=index_name,query=query,filters=filters,limit=limit,offset=offset)
+        return response

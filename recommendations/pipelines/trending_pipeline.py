@@ -207,7 +207,7 @@ def run_trending_pipeline(TrendingWeights: dict,client: str):
 
     if not final_selected.empty:
 
-        # ✅ Fix JSON issues
+        #  Fix JSON issues
         final_selected = final_selected.replace([np.inf, -np.inf], None)
         final_selected = final_selected.where(final_selected.notna(), None)
 

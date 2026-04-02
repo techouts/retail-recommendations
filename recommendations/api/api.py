@@ -161,7 +161,7 @@ def fetch_dod(
 @router.post("/best-seller/train")
 def train_best_seller(payload: dict):
 
-    client = payload.get("Client")
+    client = payload.get("client")
     settings = payload.get("settings", {})
     time_window = payload.get("time_window", {})
 
@@ -203,6 +203,7 @@ def fetch_bs_label3(
         raise HTTPException(
             status_code=400,
             detail="Only 'l3' and 'size' parameters are allowed"
+            
         )
 
     l3_list = [item.lower().strip() for item in l3 or [] if item]

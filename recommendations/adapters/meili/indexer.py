@@ -1,4 +1,6 @@
 from .client import client
+import pandas as pd
+import numpy as np
 
 
 def push_to_meili(docs, index_name: str, primary_key: str = "sku"):
@@ -6,7 +8,7 @@ def push_to_meili(docs, index_name: str, primary_key: str = "sku"):
     Push documents to meili index
     """
     if not docs:
-        print(" No documents to index.")
+        print("❌ No documents to index.")
         return
 
     index = client.index(index_name)
@@ -20,6 +22,25 @@ def push_to_meili(docs, index_name: str, primary_key: str = "sku"):
         
     index.update_filterable_attributes(["l1", "l2", "l3", "brand","skuid_A"])
 
+    # ---------------------------
+    # Clean documents
+    # ---------------------------
+    clean_docs = []
+    for d in docs:
+        clean_doc = {}
+        for k, v in d.items():
+            if isinstance(v, float) and pd.isna(v):
+                clean_doc[k] = None
+            elif isinstance(v, (np.float32, np.float64)):
+                clean_doc[k] = float(v)
+            else:
+                clean_doc[k] = v
+        clean_docs.append(clean_doc)
+
+    # ---------------------------
+    # Push
+    # ---------------------------
+    task = index.add_documents(clean_docs)
     # Add documents
     task = index.add_documents(docs)
     
@@ -28,6 +49,7 @@ def push_to_meili(docs, index_name: str, primary_key: str = "sku"):
 
     print(f"🚀 Indexing started... Task UID: {task.task_uid}")
 
+    result = client.wait_for_task(task.task_uid)
     # Optional: wait for completion
     client.wait_for_task(task.task_uid)
     

@@ -1,5 +1,9 @@
 from ..exceptions.exceptions import BadRequestException, PipelineException
 from ..pipelines.trending_pipeline import run_trending_pipeline
+from ..pipelines.trending_categories import run_category_trending_pipeline
+from ..adapters.meili.searcher import search_meili
+from ..pipelines.best_seller_pipeline import run_bestseller_pipeline
+
 
 class TrendingService:
 
@@ -17,5 +21,37 @@ class TrendingService:
             raise PipelineException(f"Trending training failed: {str(e)}")
     
 
-    # def trendingDataPreview(self,client:str):
-    #     try:
+    def getTrendingProducts(self,client:str):
+        try:
+            response=search_meili(f"{client}_trending_products")
+            return {
+                "count": len(response),
+                "data":response
+            }
+        except Exception as e:
+            raise PipelineException(f"fetching trending products failed {str(e)}")
+        
+
+
+
+
+
+class BestSellerService:
+
+    def trainBestSellerProducts(self, weights: dict, time_window: dict, client: str):
+
+        print("Best Seller Service Started")
+
+        result_df = run_bestseller_pipeline(weights, time_window,client)
+
+        print(" Pipeline Completed")
+
+
+
+
+        return {
+            "message": "Best Sellers training complete",
+            "count": len(result_df),
+            "client": client,
+            "data": result_df.to_dict(orient="records")
+        }

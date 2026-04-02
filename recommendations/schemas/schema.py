@@ -1,9 +1,8 @@
 from pydantic import BaseModel
 
-class   RecommendationCreate(BaseModel):
-    user_id: int
-    product_id: int
-    score: int
+class  TrainRecommendationsRequest(BaseModel):
+    settings: dict
+    Client: str
 
 
 class RecommendationResponse(BaseModel):
@@ -14,3 +13,15 @@ class RecommendationResponse(BaseModel):
 
     class Config:
         from_attributes= True
+
+
+from pydantic import BaseModel
+
+class TrainTrendingRequest(BaseModel):
+    settings: dict
+    Client: str
+
+
+class TrainPopularCategoriesRequest(BaseModel):
+    settings: dict
+    Client: dict

@@ -1,4 +1,4 @@
-sku,customer_id,rating,feedback,timestamp
+skuid,customer_id,rating,feedback,created_at
 SKU00001,CUST00874,5,Positive,08-09-2025 23:40
 SKU00001,CUST00887,2,Negative,11-08-2025 18:08
 SKU00001,CUST00463,2,Negative,10-08-2025 04:15

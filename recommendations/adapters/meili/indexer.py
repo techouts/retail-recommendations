@@ -3,23 +3,30 @@ import pandas as pd
 import numpy as np
 
 
-def push_to_meili(docs, index_name: str, primary_key: str = "sku"):
+
+
+
+def push_to_meili(docs, index_name: str, primary_key: str = None):
     """
-    Push documents to meili index
+    Push documents to a MeiliSearch index.
     """
     if not docs:
         print("❌ No documents to index.")
         return
 
-    index = client.index(index_name)
-
-    # Create index if not exists
+    # ---------------------------
+    # Ensure index exists
+    # ---------------------------
     try:
-        index.get_stats()
+        client.get_index(index_name)
     except Exception:
-        client.create_index(index_name, {"primaryKey": primary_key})
-        print(f" Created index: {index_name}")
-        
+        print(f"🆕 Creating index: {index_name}")
+        if primary_key:
+            client.create_index(index_name, {"primaryKey": primary_key})
+        else:
+            client.create_index(index_name)
+
+    index = client.index(index_name)
     index.update_filterable_attributes(["l1", "l2", "l3", "brand"])
 
     # ---------------------------
@@ -29,37 +36,27 @@ def push_to_meili(docs, index_name: str, primary_key: str = "sku"):
     for d in docs:
         clean_doc = {}
         for k, v in d.items():
+            key = "sku" if k == "skuid" else k  # always normalize
+
             if isinstance(v, float) and pd.isna(v):
-                clean_doc[k] = None
+                clean_doc[key] = None
             elif isinstance(v, (np.float32, np.float64)):
-                clean_doc[k] = float(v)
+                clean_doc[key] = float(v)
             else:
-                clean_doc[k] = v
+                clean_doc[key] = v
         clean_docs.append(clean_doc)
 
     # ---------------------------
     # Push
     # ---------------------------
     task = index.add_documents(clean_docs)
-    # Add documents
-    task = index.add_documents(docs)
-    
-    # print("Docs sample:", docs[:2])
-    # print("Task:", task)
-
     print(f"🚀 Indexing started... Task UID: {task.task_uid}")
 
     result = client.wait_for_task(task.task_uid)
-    # Optional: wait for completion
-    client.wait_for_task(task.task_uid)
-    
-    # client.delete_index("ssb_deal_of_day")
-    
-    task_status = client.get_task(task.task_uid)
-    # print("Task status:", task_status)
-    
-    print(index.get_stats())
-    
-    client.delete_index("ssb1_deal_of_day")
 
-    print(" Documents successfully indexed in meili")
+    if result.status == "succeeded":
+        print(f"✅ Indexed {len(clean_docs)} documents into '{index_name}'")
+        print(index.get_stats())
+    else:
+        print("❌ Indexing failed!")
+        print(result.error)

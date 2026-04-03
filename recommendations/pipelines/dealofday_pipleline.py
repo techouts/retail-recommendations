@@ -50,30 +50,30 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
     # print("Catalog head : ",catalog.head(10))
     # Filter catalog by L3 and PMR SKUs
     catalogdf = catalog[
-        (catalog["l3"].isin(levels)) & (catalog["sku"].isin(pmrdf["sku"]))
+        (catalog["l3"].isin(levels)) & (catalog["skuid"].isin(pmrdf["skuid"]))
     ].copy()
     catalogdf["is_new"] = (dt.today() - catalogdf["created_at"]).dt.days <= dod_weights.new_product_window_days
 
     print("catalog df : ",catalogdf.head(10))
     
     # Inventory filter
-    inventorydf = inventory[inventory["sku"].isin(catalogdf["sku"])].copy()
-    inventorydf = inventorydf.groupby("sku").agg(total_quantity=("quantity", "sum")).reset_index()
+    inventorydf = inventory[inventory["skuid"].isin(catalogdf["skuid"])].copy()
+    inventorydf = inventorydf.groupby("skuid").agg(total_quantity=("quantity", "sum")).reset_index()
     inventorydf = inventorydf[inventorydf["total_quantity"] >= dod_weights.min_stock]
     
     print("Inventory df : ",inventorydf.head(10))
 
     # Analytics aggregation
-    analyticsdf = analytics[analytics["sku"].isin(inventorydf["sku"])].copy()
-    analyticsdf = analyticsdf.groupby("sku")[["addtocart", "views"]].sum().reset_index()
+    analyticsdf = analytics[analytics["skuid"].isin(inventorydf["skuid"])].copy()
+    analyticsdf = analyticsdf.groupby("skuid")[["addtocart", "views"]].sum().reset_index()
     
     print("Analytics : ",analyticsdf.head(10))
 
     # Ratings aggregation
-    ratingdf = customer_rating[customer_rating["sku"].isin(inventorydf["sku"])].copy()
+    ratingdf = customer_rating[customer_rating["skuid"].isin(inventorydf["skuid"])].copy()
     print("Ratings df : ",ratingdf.head(10))
-    ratingdf = ratingdf.groupby("sku").agg(
-        review_count=("sku", "count"),
+    ratingdf = ratingdf.groupby("skuid").agg(
+        review_count=("skuid", "count"),
         avg_rating=("rating", "mean")
     ).reset_index()
     
@@ -82,10 +82,10 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
     print("Ratings df : ",ratingdf.head(10))
     # Merge all data
     resultdf = (
-        catalogdf.merge(pmrdf, on="sku", how="left")
-                 .merge(inventorydf, on="sku", how="left")
-                 .merge(analyticsdf, on="sku", how="left")
-                 .merge(ratingdf, on="sku", how="left")
+        catalogdf.merge(pmrdf, on="skuid", how="left")
+                 .merge(inventorydf, on="skuid", how="left")
+                 .merge(analyticsdf, on="skuid", how="left")
+                 .merge(ratingdf, on="skuid", how="left")
     )
     resultdf = resultdf.loc[:, ~resultdf.columns.str.endswith(('_x', '_y'))]
     
@@ -96,8 +96,8 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
     print("filtered df : ",resultdf.head(10))
     
     count_after_filter = filtered.groupby("l3").agg(
-        count=("sku", "count"),
-        skuid=("sku", lambda x: list(x))
+        count=("skuid", "count"),
+        skuid=("skuid", lambda x: list(x))
     ).reset_index()
     
     print("Filtered results : ",count_after_filter.head(10))
@@ -108,7 +108,7 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
 
     for k, v, skuid in count_after_filter.itertuples(index=False):
         if v > 0:
-            temp_df = resultdf[(resultdf["l3"] == k) & (resultdf["sku"].isin(skuid))].copy()
+            temp_df = resultdf[(resultdf["l3"] == k) & (resultdf["skuid"].isin(skuid))].copy()
             temp_df["relaxed_review"] = False
             relaxed_review_log.append({"l3": k, "relaxed_review": False, "qualified_skus": len(skuid)})
         else:
@@ -152,7 +152,7 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
             new_prod = subset[subset["is_new"]]
             top_by_score = subset.sort_values(by="score", ascending=False)
             if not new_prod.empty:
-                pick = pd.concat([new_prod.head(1), top_by_score.head(per_cat - 1)]).drop_duplicates("sku")
+                pick = pd.concat([new_prod.head(1), top_by_score.head(per_cat - 1)]).drop_duplicates("skuid")
             else:
                 pick = top_by_score.head(per_cat)
             final_list.append(pick)
@@ -170,13 +170,13 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
     # values = final_df['l3'].tolist()
     
     # es_df = final_df[[
-    #         "sku", "l1", "l2", "l3", "title", "brand", "pmr_price",
+    #         "skuid", "l1", "l2", "l3", "title", "brand", "pmr_price",
     #         "pmr_discount", "is_new", "name", "discount_enddate",
     #         "avg_rating", "relaxed_review", "score"
     #     ]].copy()
     
     es_df = final_df[[
-           'sku', 'title', 'l1', 'l2', 'l3', 'brand', 'status', 'availability',
+           'skuid', 'title', 'l1', 'l2', 'l3', 'brand', 'status', 'availability',
        'is_new', 'name', 'price', 'pmr_price', 'pmr_discount',
        'discount_enddate', 'total_quantity', 'addtocart', 'views',
        'review_count', 'avg_rating', 'relaxed_review', 'normalized_views',

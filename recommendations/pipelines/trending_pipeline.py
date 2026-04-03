@@ -1,3 +1,4 @@
+import math
 import os
 import pandas as pd
 import numpy as np
@@ -9,6 +10,28 @@ from types import SimpleNamespace
 
 # BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # CSV_DIR = os.path.join(BASE_DIR, "data", "processed")
+
+
+def deep_clean(obj):
+    # Handle dict
+    if isinstance(obj, dict):
+        return {k: deep_clean(v) for k, v in obj.items()}
+    
+    # Handle list
+    elif isinstance(obj, list):
+        return [deep_clean(v) for v in obj]
+    
+    # Handle numpy types
+    elif isinstance(obj, (np.float32, np.float64, float)):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return float(obj)
+    
+    # Handle pandas NaT
+    elif pd.isna(obj):
+        return None
+    
+    return obj
 
 
 def ensure_datetime(df: pd.DataFrame, col: str):
@@ -216,14 +239,28 @@ def run_trending_pipeline(TrendingWeights: dict,client: str):
             "display_title", "brand", "selling_price",
             "trending_score", "is_trending", "is_threshold_relaxed","image_urls"
         ]].copy()
+        records = final_selected.to_dict(orient="records")
 
+        
         docs = meili_df.to_dict(orient="records")
+
+        if not docs:
+            print("⚠️ meili_df is empty. No docs to push.")
+            return []
+
+        docs = deep_clean(docs)
+
+        if not docs:
+            print("⚠️ After deep_clean, no valid docs remain.")
+            # fallback: push top N by trending_score
+            top_df = meili_df.sort_values(by="trending_score", ascending=False).head(50)
+            docs = deep_clean(top_df.to_dict(orient="records"))
 
         push_to_meili(
             docs=docs,
             index_name=f"{client}_trending_products"
         )
-        
-        return final_selected.to_dict(orient="records")
+
+        return docs
 
     return []   

@@ -123,7 +123,7 @@ def run_popular_categories_pipeline(PopularCategoryWeights: dict, client: str):
         )
 
     # ------------------------------------------------------------------
-    # SKU score
+    # skuid score
     # ------------------------------------------------------------------
     merged["sku_score"] = (
         normalize(merged["weighted_sales"]) * 0.5 +

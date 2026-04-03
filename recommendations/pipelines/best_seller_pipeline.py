@@ -75,7 +75,7 @@
 #     returns = pd.read_csv(os.path.join(CSV_DIR, "returns.csv"))
 
 #     # ---------------------------
-#     # FIX SKU
+#     # FIX skuid
 #     # ---------------------------
 #     catalog.columns = catalog.columns.str.strip()
 #     if "sku_id" in catalog.columns:

@@ -1,4 +1,4 @@
-order_id,skuid,seller_id,created_at,price
+order_id,sku_id,seller_id,created_at,price
 O81,62316095,S001,19-09-2025 00:00,899.5
 O82,1982137274,S001,19-09-2025 00:00,750
 O83,059035342X,S001,19-09-2025 00:00,650

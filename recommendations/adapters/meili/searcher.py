@@ -28,3 +28,4 @@ def search_meili(
         "hits": results.get("hits", []),
         "nbHits": results.get("estimatedTotalHits", 0),
     }
+ 

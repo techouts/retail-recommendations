@@ -1,4 +1,4 @@
-sku_id,order_id,quantity,status,created_at
+sku_id,order_id,quantity,status,timestamp
 62316095,ORD20260103000001,1,completed,2026-01-03T08:14:22.436022
 1982137274,ORD20260107000002,2,shipped,2026-01-07T19:45:10.436022
 059035342X,ORD20260112000003,1,completed,2026-01-12T11:32:56.436022

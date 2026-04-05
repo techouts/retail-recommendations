@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 from ..utils.pipeline_utils import load_csv, normalize
 from ..adapters.meili.indexer import push_to_meili
 from types import SimpleNamespace
-from ..adapters.meili.indexer import push_to_meili
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_DIR = os.path.join(BASE_DIR, "data", "processed")
@@ -39,7 +38,7 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
     date_obj = dt.strptime(date_str, '%Y-%m-%d').date()
 
     # Filter PMR data
-    pmrdf = pmr[
+    pmrdf = pmr[    
         # (pmr["discount_enddate"].dt.date >= dt.today().date()) &
         (pmr["discount_enddate"].dt.date >= date_obj) &
         (pmr["pmr_discount"].between(dod_weights.min_discount_threshold, dod_weights.max_discount_threshold))

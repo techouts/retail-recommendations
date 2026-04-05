@@ -65,8 +65,28 @@ def run_popular_categories_pipeline(PopularCategoryWeights: dict, client: str):
     # ------------------------------------------------------------------
     catalog_df     = load_csv("catalog.csv")
     analytics_df   = load_csv("analytics.csv")
-    fulfillment_df = load_csv("fullfillment.csv")
+    fulfillment_df = load_csv("fulfillment.csv")
     inventory_df   = load_csv("inventory.csv")
+  
+  
+    for df in [catalog_df, analytics_df, fulfillment_df, inventory_df]:
+      
+        df.columns = df.columns.str.strip().str.lower()
+        if "sku_id" in df.columns:
+            df.rename(columns={"sku_id": "skuid"}, inplace=True)
+        elif "sku" in df.columns:
+            df.rename(columns={"sku": "skuid"}, inplace=True)
+
+        if "timestamp" in df.columns:
+            df.rename(columns={"timestamp": "created_at"}, inplace=True)
+        elif "date" in df.columns:
+            df.rename(columns={"date": "created_at"}, inplace=True)
+        elif "createdat" in df.columns:
+            df.rename(columns={"createdat": "created_at"}, inplace=True)
+
+        
+        if "created_at" in df.columns:
+            df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
 
     for df in [catalog_df, analytics_df, fulfillment_df, inventory_df]:
         if "created_at" in df.columns:

@@ -60,3 +60,46 @@ def push_to_meili(docs, index_name: str, primary_key: str = None):
     else:
         print("❌ Indexing failed!")
         print(result.error)
+    # Optional: wait for completion
+    client.wait_for_task(task.task_uid)
+    
+    # client.delete_index("ssb2_deal_of_day")
+    
+    task_status = client.get_task(task.task_uid)
+    # print("Task status:", task_status)
+    
+    print(index.get_stats())
+    
+    # client.delete_index("ssb1_deal_of_day")
+
+    print(" Documents successfully indexed in meili")
+    
+
+def push_to_meili_fbt(docs, index_name: str, primary_key: str = "skuid_A"):
+
+    if not docs:
+        print("No documents to index.")
+        return
+
+    try:
+        client.delete_index(index_name)
+        print(f"Deleted index: {index_name}")
+    except:
+        pass
+
+    client.create_index(index_name, {"primaryKey": primary_key})
+    index = client.index(index_name)
+
+    task = index.update_filterable_attributes([
+        "skuid_A", "l1_A", "l2_A", "l3_A", "brand_A"
+    ])
+    client.wait_for_task(task.task_uid)
+
+
+    task = index.add_documents(docs)
+    print(f"🚀 Indexing started... Task UID: {task.task_uid}")
+
+    client.wait_for_task(task.task_uid)
+
+    print(index.get_stats())
+    print("Documents successfully indexed in meili")

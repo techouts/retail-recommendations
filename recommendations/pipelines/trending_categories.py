@@ -38,7 +38,7 @@ def run_category_trending_pipeline(TrendingWeights: dict, client: str):
     # ------------------------------------------------------------------
     catalog_df     = load_csv("catalog.csv")
     analytics_df   = load_csv("analytics.csv")
-    fulfillment_df = load_csv("fullfillment.csv")
+    fulfillment_df = load_csv("fulfillment.csv")
     inventory_df   = load_csv("inventory.csv")
 
     for df, col in [

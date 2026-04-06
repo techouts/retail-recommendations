@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request
-from recommendations.api.api import router
+from recommendations.router import router
 from fastapi.responses import JSONResponse
 from recommendations.exceptions.exceptions import AppException
 

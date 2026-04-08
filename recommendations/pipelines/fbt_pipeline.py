@@ -7,6 +7,7 @@ from ..adapters.meili.indexer import push_to_meili , push_to_meili_fbt
 from types import SimpleNamespace
 from itertools import combinations
 from collections import Counter
+from ..es_utils.es_utils import push_to_es
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_DIR = os.path.join(BASE_DIR)
@@ -27,7 +28,7 @@ def calculate_support(ordersdf, pairdf):
     return pairdf
 
 def calculate_confidence(ordersdf, pairdf):
-    order_count_per_product = ordersdf.groupby("skuid")["order_id"].nunique().to_dict()
+    order_count_per_product = ordersdf.groupby("sku_id")["order_id"].nunique().to_dict()
     confidences = []
     for pair, order_count in zip(pairdf["Pair"], pairdf["OrderCount"]):
         A, B = pair
@@ -38,7 +39,7 @@ def calculate_confidence(ordersdf, pairdf):
 
 def calculate_lift(ordersdf, conf_df):
     total_orders = ordersdf["order_id"].nunique()
-    product_support = ordersdf.groupby("skuid")["order_id"].nunique() / total_orders
+    product_support = ordersdf.groupby("sku_id")["order_id"].nunique() / total_orders
     lifts_A_to_B, lifts_B_to_A = [], []
     for _, row in conf_df.iterrows():
         A, B = row["Pair"]
@@ -71,11 +72,11 @@ def merge_fbt_with_catalog(finaldf, catalogdf, price_tolerance):
     finaldf["skuid_B"] = finaldf["Pair"].apply(lambda x: x[1])
     catalog_A = catalogdf.add_suffix("_A")
     merged_df = finaldf.merge(
-        catalog_A, left_on="skuid_A", right_on="skuid_A", how="left"
+        catalog_A, left_on="skuid_A", right_on="sku_id_A", how="left"
     )
     catalog_B = catalogdf.add_suffix("_B")
     merged_df = merged_df.merge(
-        catalog_B, left_on="skuid_B", right_on="skuid_B", how="left"
+        catalog_B, left_on="skuid_B", right_on="sku_id_B", how="left"
     )
     print("Pairs after catalog merge:", len(merged_df))
 
@@ -120,7 +121,7 @@ def merge_fbt_with_catalog(finaldf, catalogdf, price_tolerance):
     )
     return merged_df[columns]
 
-def fbt_group_to_ms_doc(group):
+def fbt_group_to_es_doc(group):
     first = group.iloc[0]
     doc = {
         "skuid_A": first["skuid_A"],
@@ -172,12 +173,12 @@ def run_fbt_pipeline(fbt_weights : dict , client : str):
     LIFT_MIN = weights.lift_min
     PRICE_TOLERANCE = weights.price_tolerance
     
-    print("Freq threshold : ",FREQ_THRESHOLD)
-    print("Confidence min : ",CONFIDENCE_MIN)
+    # print("Freq threshold : ",FREQ_THRESHOLD)
+    # print("Confidence min : ",CONFIDENCE_MIN)
     
-    catalog_path = os.path.join(BASE_DIR,"data","processed","catalog-csv-c.csv")
-    orders_path = os.path.join(BASE_DIR,"data","processed", "orders-c.csv")
-    inventory_path = os.path.join(BASE_DIR,"data","processed", "inventory-c.csv")
+    catalog_path = os.path.join(BASE_DIR,"data","processed","catalog.csv.csv")
+    orders_path = os.path.join(BASE_DIR,"data","processed", "orders.csv.csv")
+    inventory_path = os.path.join(BASE_DIR,"data","processed", "inventory.csv.csv")
     
     catalog = pd.read_csv(catalog_path)
     # print("Catalog columns : ",catalog.columns)
@@ -185,34 +186,46 @@ def run_fbt_pipeline(fbt_weights : dict , client : str):
     inventory = pd.read_csv(inventory_path)
     
     inventorydf = inventory[inventory["stock_quantity"] >= 1]
-    catalogdf = catalog[catalog["skuid"].isin(inventorydf["skuid"])]
-    ordersdf = orders[orders["skuid"].isin(inventorydf["skuid"])] 
+    # print("Inventory df : ",inventorydf.head(10))
+    catalogdf = catalog[catalog["sku_id"].isin(inventorydf["sku_id"])]
+    # print("Catalog df : ",catalogdf.head(10))
+    ordersdf = orders[orders["sku_id"].isin(inventorydf["sku_id"])]
+    # print("Orders df : ",ordersdf.head(10)) 
     
-    pairsdf = product_pairs(ordersdf.groupby("order_id")["skuid"].apply(list))
+    pairsdf = product_pairs(ordersdf.groupby("order_id")["sku_id"].apply(list))
     # print("Pairs generated:", len(pairsdf))
     # print("Pair DF : ",pairsdf.head(10))
     supportdf = calculate_support(ordersdf, pairsdf)
-    # print("Support DF : ",supportdf.head(10))
+    # print("Support DF : ",supportdf.head(20))
     # supportdf.to_csv("supportdf_debug.csv", index=False)
-    supportdf = supportdf[supportdf["OrderCount"] >= FREQ_THRESHOLD]
+    
+    # supportdf = supportdf[supportdf["OrderCount"] >= FREQ_THRESHOLD]
+    
     # print("Pairs after support threshold:", len(supportdf))
     if supportdf.empty:
         print("⚠️ No FBT pairs found")
         return pd.DataFrame()
     conf_df = calculate_confidence(ordersdf, supportdf)
+    
+    # print("Confidence df : ",conf_df)
+    
     conf_df = conf_df[
         (conf_df["Confidence(A→B)"] >= CONFIDENCE_MIN)
         | (conf_df["Confidence(B→A)"] >= CONFIDENCE_MIN)
     ]
     # print("Pairs after confidence threshold:", len(conf_df))
     if conf_df.empty:
-        print("⚠️ No FBT pairs after confidence filter")
+        # print("⚠️ No FBT pairs after confidence filter")
         return pd.DataFrame()
+    
     liftdf = calculate_lift(ordersdf, conf_df)
     liftdf = liftdf[
         (liftdf["Lift(A→B)"] >= LIFT_MIN)
         | (liftdf["Lift(B→A)"] >= LIFT_MIN)
     ]
+    
+    # print("Lift df : ",liftdf)
+    
     # print("Pairs after lift threshold:", len(liftdf))
     if liftdf.empty:
         print("⚠️ No FBT pairs after lift filter")
@@ -221,9 +234,13 @@ def run_fbt_pipeline(fbt_weights : dict , client : str):
     
     finaldf = supportdf.merge(liftdf, on="Pair")
     finaldf["score"] = finaldf.apply(calculate_score, axis=1)
+    
     # print("Final df : ",finaldf.head(10))
     
     merged = merge_fbt_with_catalog(finaldf, catalogdf, price_tolerance=PRICE_TOLERANCE)
+    
+    # print("Merged : ",merged.head(10))
+    
     if merged.empty:
         print("⚠️ No FBT pairs survived catalog/price/l1 filter")
         return pd.DataFrame()
@@ -233,15 +250,29 @@ def run_fbt_pipeline(fbt_weights : dict , client : str):
     merged = merged.drop_duplicates(subset="sorted_pair").drop(columns=["sorted_pair"])
     # print("Merged : ",merged.head(10))
     
+    
+    # meili search
+    
     grouped_docs = []
     for skuid_a, group in merged.groupby("skuid_A"):
-        grouped_docs.append(fbt_group_to_ms_doc(group))
+        grouped_docs.append(fbt_group_to_es_doc(group))
         
-    print("Grouped docs : ",grouped_docs)
+    # print("Grouped docs : ",grouped_docs)
     
-    push_to_meili_fbt(
-        docs=grouped_docs,
-        index_name = f"{client}_fbt_products"
-    )
     
-    return grouped_docs
+    # meili
+    # push_to_meili_fbt(
+    #     docs=grouped_docs,
+    #     index_name = f"{client}_fbt_products"
+    # )
+    # return grouped_docs
+    
+    
+    # elastice search
+    grouped_docs = []
+    for skuid_a, group in merged.groupby("skuid_A"):
+        grouped_docs.append(fbt_group_to_es_doc(group))
+    # print("Grouped docs : ",grouped_docs)
+    push_to_es(docs=grouped_docs, INDEX_PREFIX="fbt_recommendations", ALIAS_NAME="fbt")
+    print(f"✅ Pushed {len(grouped_docs)} FBT docs to ES")
+    return merged

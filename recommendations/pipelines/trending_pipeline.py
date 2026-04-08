@@ -22,7 +22,9 @@ from pydantic import BaseModel, Field
 from types import SimpleNamespace
 
 from ..utils.pipeline_utils import load_csv, normalize
-from ..adapters.meili.indexer import push_to_meili
+# from ..adapters.meili.indexer import push_to_meili
+from ..adapters.es.indexer import push_to_es
+
 
 logger = logging.getLogger(__name__)
 
@@ -494,7 +496,11 @@ def run_trending_pipeline(trending_weights: dict, client: str) -> list[dict]:
         logger.error("build_meili_docs returned empty list — nothing to push.")
         return []
 
-    push_to_meili(docs=docs, index_name=f"{client}_trending_products")
+    push_to_es(
+    INDEX_PREFIX=f"{client}_trending_products",
+    ALIAS_NAME=f"{client}_trending_products",
+    docs=docs
+)
     logger.info("Pipeline complete — pushed %d documents for client='%s'", len(docs), client)
 
     return docs

@@ -435,6 +435,9 @@ def build_meili_docs(
     return docs
 
 
+# def parse_trending_score_json(finaldf: pd.DataFrame):
+#     parse_data=finaldf[""]
+
 # ─────────────────────────────────────────────
 # 9. Main pipeline entry point
 # ─────────────────────────────────────────────
@@ -470,7 +473,7 @@ def run_trending_pipeline(trending_weights: dict, client: str) -> list[dict]:
     # ── 4. Signals ──
     now    = datetime.now()
     merged = compute_signals(analytics_df, fulfillment_df, eligible_skuids, now)
-
+    
     # ── 5. Score ──
     scored = score_products(merged, weights)
 
@@ -483,7 +486,44 @@ def run_trending_pipeline(trending_weights: dict, client: str) -> list[dict]:
     # ── 7. Cap & fill (dynamic category depth) ──
     cat_levels   = _detect_category_levels(catalog_with_metrics)
     final_df     = apply_caps_and_fill(catalog_with_metrics, weights)
+    merged_df = final_df.rename(columns={
+    # Sales
+    "24h_sales": "sales_24h",
+    "3d_sales": "sales_3d",
+    "7d_sales": "sales_7d",
 
+    # Views
+    "24h_views": "views_24h",
+    "3d_views": "views_3d",
+    "7d_views": "views_7d",
+
+    # Cart
+    "24h_cart": "cart_24h",
+    "3d_cart": "cart_3d",
+    "7d_cart": "cart_7d",
+
+    # Wish
+    "24h_wish": "wish_24h",
+    "3d_wish": "wish_3d",
+    "7d_wish": "wish_7d",
+    
+    })
+
+    parse_json_df = merged_df[[
+    "skuid",
+    "sales_24h", "sales_3d", "sales_7d",
+    "views_24h", "views_3d", "views_7d",
+    "cart_24h", "cart_3d", "cart_7d",
+    "wish_24h", "wish_3d", "wish_7d",
+    "weighted_sales", "weighted_views", "weighted_cart", "weighted_wish",
+    "trending_score", "is_trending",
+    "norm_sales", "norm_views", "norm_cart", "norm_wish",
+    "is_threshold_relaxed",
+    ]]
+    parse_json_df = parse_json_df.replace([np.inf, -np.inf], np.nan)
+    parse_json_df = parse_json_df.where(merged_df.notna(), None)
+
+    final_response = deep_clean(parse_json_df.to_dict(orient="records"))
     if final_df.empty:
         logger.warning("No products after cap/fill — aborting pipeline.")
         return []
@@ -497,4 +537,4 @@ def run_trending_pipeline(trending_weights: dict, client: str) -> list[dict]:
     push_to_meili(docs=docs, index_name=f"{client}_trending_products")
     logger.info("Pipeline complete — pushed %d documents for client='%s'", len(docs), client)
 
-    return docs
+    return final_response

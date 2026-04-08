@@ -86,11 +86,11 @@ def push_to_meili(
     staging_name = f"{index_name}_staging"
 
     # ── Ensure staging index exists ──
-    try:
+    if client.indices.exists(index=staging_name):
         client.delete_index(staging_name)
         logger.debug("Deleted pre-existing staging index '%s'", staging_name)
-    except Exception:
-        pass  # didn't exist — that's fine
+    else:
+        logger.debug("Staging index '%s' does not exist, nothing to delete", staging_name)
 
     client.create_index(staging_name, {"primaryKey": primary_key})
     staging_index = client.index(staging_name)

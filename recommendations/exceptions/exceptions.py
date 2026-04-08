@@ -23,3 +23,4 @@ class meiliException(AppException):
 class PipelineException(AppException):
     def __init__(self, message="Trending pipeline failed"):
         super().__init__(message, status_code=409)
+        

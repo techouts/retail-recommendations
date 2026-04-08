@@ -188,3 +188,62 @@ def push_to_meili_fbt(
         raise RuntimeError(f"FBT indexing failed for '{index_name}': {result.error}")
 
     logger.info("FBT index '%s' ready. Stats: %s", index_name, index.get_stats())
+    
+    
+
+def push_to_meili_popular_brands(
+    docs: list[dict],
+    index_name: str,
+    primary_key: str = "brand_id",   
+) -> None:
+    """
+    Push Popular Brands documents to MeiliSearch.
+    Fully rebuilds index each time.
+    """
+
+    if not docs:
+        logger.warning("push_to_meili_popular_brands called with empty docs — skipping.")
+        return
+
+    try:
+        # 🔥 Delete existing index (full rebuild)
+        client.delete_index(index_name)
+        logger.debug("Deleted existing Popular Brands index '%s'", index_name)
+    except Exception:
+        pass
+
+    client.create_index(index_name, {"primaryKey": primary_key})
+    index = client.index(index_name)
+
+    # ✅ Define filterable fields
+    filterable_fields = [
+        "brand_id",
+        "rank",
+        "score",
+        "total_orders",
+        "total_views",
+        "avg_rating",
+        "total_cart",
+        "available_products",
+        "status"
+    ]
+
+    task = index.update_filterable_attributes(filterable_fields)
+    client.wait_for_task(task.task_uid)
+
+    # (Optional but recommended) sorting fields
+    sortable_fields = ["rank", "score", "total_orders", "total_views"]
+
+    task = index.update_sortable_attributes(sortable_fields)
+    client.wait_for_task(task.task_uid)
+
+    # ✅ Push documents
+    task = index.add_documents(docs)
+    logger.info("Popular Brands indexing task submitted — task_uid=%s", task.task_uid)
+
+    result = client.wait_for_task(task.task_uid)
+
+    if result.status != "succeeded":
+        raise RuntimeError(f"Popular Brands indexing failed for '{index_name}': {result.error}")
+
+    logger.info("Popular Brands index '%s' ready. Stats: %s", index_name, index.get_stats())

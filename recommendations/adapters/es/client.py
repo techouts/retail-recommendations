@@ -2,14 +2,14 @@ from elasticsearch import Elasticsearch
 import os
 from dotenv import load_dotenv
 
-from pathlib import Path
 
 
-env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 
-print(env_path)
 
-load_dotenv(dotenv_path=env_path)
+
+
+
+load_dotenv()
 
 ES_HOST = os.getenv("ES_HOST")
 

@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from .api import trending,bestseller
-from .api import popular_category,popular_brand
+from .api import popular_category
 
 router=APIRouter(prefix="/recommendations", tags=["Recommendations"])
 
@@ -24,12 +24,5 @@ router.include_router(
     popular_category.router,
     prefix="/popular_category",
     tags=["PopularCategory"]
-)
-
-# Popular brand 
-router.include_router(
-    popular_brand.router,
-    prefix="/popular_brand",
-    tags=["PopularBrand"]
 )
 

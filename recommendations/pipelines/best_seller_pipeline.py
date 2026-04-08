@@ -531,7 +531,11 @@ import os
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
-from ..adapters.meili.indexer import push_to_meili
+# from ..adapters.meili.indexer import push_to_meili
+# from ..es_utils.es_utils import push_to_es
+from ..adapters.es.indexer import push_to_es
+
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_DIR = os.path.join(BASE_DIR, "data", "processed")
@@ -713,26 +717,65 @@ def run_bestseller_pipeline(weights: dict, time_window: dict,client: str):
         how="left"
     )
 
-    # OUTPUT
+    # # OUTPUT
+    # es_data = final_perf[[
+    #     "skuid","seller_id","category_l1","category_l2","category_l3",
+    #     "selling_price","product_name","brand",
+    #     "sales_score_val","revenue_score_val","stock_score_val",
+    #     "return_score_val","rating_score_val",
+    #     "seller_score_val",
+    #     "final_score"
+    # ]].fillna("")
+
+    # es_data = es_data.rename(columns={
+    #     "selling_price": "price",
+    #     "product_name": "title"
+    # })
+
+    # es_data = es_data.sort_values(by="final_score", ascending=False)
+
+    # push_to_meili(
+    #     docs=df_to_docs(es_data),
+    #     index_name=f"{client}best_sellers"
+    # )
+
+    # return es_data
+
     es_data = final_perf[[
-        "skuid","seller_id","category_l1","category_l2","category_l3",
-        "selling_price","product_name","brand",
-        "sales_score_val","revenue_score_val","stock_score_val",
-        "return_score_val","rating_score_val",
-        "seller_score_val",
-        "final_score"
-    ]].fillna("")
+    "skuid","seller_id","category_l1","category_l2","category_l3",
+    "selling_price","product_name","brand",
+    "sales_score_val","revenue_score_val","stock_score_val",
+    "return_score_val","rating_score_val",
+    "seller_score_val",
+    "final_score"
+]].fillna({
+    "price": 0,
+    "final_score": 0,
+    "sales_score_val": 0,
+    "revenue_score_val": 0,
+    "stock_score_val": 0,
+    "return_score_val": 0,
+    "rating_score_val": 0,
+    "seller_score_val": 0
+})
 
     es_data = es_data.rename(columns={
         "selling_price": "price",
-        "product_name": "title"
+        "product_name": "title",
+        "category_l1": "l1",
+        "category_l2": "l2",
+        "category_l3": "l3"
     })
 
     es_data = es_data.sort_values(by="final_score", ascending=False)
 
-    push_to_meili(
-        docs=df_to_docs(es_data),
-        index_name=f"{client}best_sellers"
+    docs = df_to_docs(es_data)
+
+    #  Elasticsearch push
+    push_to_es(
+        INDEX_PREFIX=f"{client}_best_sellers",
+        ALIAS_NAME=f"{client}_best_sellers",
+        docs=docs
     )
 
     return es_data

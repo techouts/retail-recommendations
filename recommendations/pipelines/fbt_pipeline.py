@@ -7,6 +7,7 @@ from ..adapters.meili.indexer import push_to_meili , push_to_meili_fbt
 from types import SimpleNamespace
 from itertools import combinations
 from collections import Counter
+from ..adapters.es.indexer import push_to_es
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_DIR = os.path.join(BASE_DIR)
@@ -239,9 +240,12 @@ def run_fbt_pipeline(fbt_weights : dict , client : str):
         
     print("Grouped docs : ",grouped_docs)
     
-    push_to_meili_fbt(
-        docs=grouped_docs,
-        index_name = f"{client}_fbt_products"
-    )
+    
+    push_to_es(
+        INDEX_PREFIX=f"{client}_fbt_products",
+        ALIAS_NAME=f"{client}__fbt_products",
+        docs=grouped_docs
+    )    
+    
     
     return grouped_docs

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from ..utils.pipeline_utils import load_csv, normalize
 from ..adapters.meili.indexer import push_to_meili
 from types import SimpleNamespace
+from ..adapters.es.indexer import push_to_es
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_DIR = os.path.join(BASE_DIR, "data", "processed")
@@ -185,11 +186,12 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
     
     
     docs = es_df.to_dict(orient="records")
-    
-    push_to_meili(
-            docs=docs,
-            index_name=f"{client}_deal_of_day"
-        )
+ 
+    push_to_es(
+        INDEX_PREFIX=f"{client}_deal_of_day",
+        ALIAS_NAME=f"{client}_deal_of_day",
+        docs=docs
+    )    
     
     # return final_df.to_dict(orient="records")
     return docs

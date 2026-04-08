@@ -83,17 +83,17 @@ def push_to_meili(
         len(clean_docs), index_name, filterable,
     )
 
-    staging_name = f"{index_name}_staging"
+    index_name = f"{index_name}_staging"
 
     # ── Ensure staging index exists ──
     try:
-        client.delete_index(staging_name)
-        logger.debug("Deleted pre-existing staging index '%s'", staging_name)
+        client.delete_index(index_name)
+        logger.debug("Deleted pre-existing staging index '%s'", index_name)
     except Exception:
         pass  # didn't exist — that's fine
 
-    client.create_index(staging_name, {"primaryKey": primary_key})
-    staging_index = client.index(staging_name)
+    client.create_index(index_name, {"primaryKey": primary_key})
+    staging_index = client.index(index_name)
 
     # ── Set filterable attributes ──
     task = staging_index.update_filterable_attributes(filterable)
@@ -107,19 +107,19 @@ def push_to_meili(
 
     if result.status != "succeeded":
         raise RuntimeError(
-            f"Meilisearch indexing failed for '{staging_name}': {result.error}"
+            f"Meilisearch indexing failed for '{index_name}': {result.error}"
         )
-    logger.info("Indexed %d documents into staging '%s'", len(clean_docs), staging_name)
+    logger.info("Indexed %d documents into staging '%s'", len(clean_docs), index_name)
 
     # ── Atomic swap: staging ↔ live ──
     try:
-        swap_task = client.swap_indexes([{"indexes": [index_name, staging_name]}])
+        swap_task = client.swap_indexes([{"indexes": [index_name, index_name]}])
         client.wait_for_task(swap_task.task_uid)
-        logger.info("Atomically swapped '%s' ↔ '%s'", staging_name, index_name)
+        logger.info("Atomically swapped '%s' ↔ '%s'", index_name, index_name)
 
         # Clean up old (now-staging) index
-        client.delete_index(staging_name)
-        logger.debug("Cleaned up old staging index '%s'", staging_name)
+        client.delete_index(index_name)
+        logger.debug("Cleaned up old staging index '%s'", index_name)
 
     except Exception as swap_err:
         # Meilisearch cloud / older versions may not support swap — fall back
@@ -160,11 +160,11 @@ def push_to_meili_fbt(
         logger.warning("push_to_meili_fbt called with empty docs — skipping.")
         return
 
-    try:
+    if client.indices.exists(index=index_name):
         client.delete_index(index_name)
-        logger.debug("Deleted existing FBT index '%s'", index_name)
-    except Exception:
-        pass
+        logger.debug("Deleted pre-existing staging index '%s'", index_name)
+    else:
+        logger.debug("Staging index '%s' does not exist, nothing to delete", index_name)
 
     client.create_index(index_name, {"primaryKey": primary_key})
     index = client.index(index_name)

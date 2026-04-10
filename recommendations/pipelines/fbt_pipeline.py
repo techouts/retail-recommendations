@@ -7,6 +7,7 @@ from ..adapters.meili.indexer import push_to_meili , push_to_meili_fbt
 from types import SimpleNamespace
 from itertools import combinations
 from collections import Counter
+from .utils import df_to_es_docs
 from ..adapters.es.indexer import push_to_es
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -259,27 +260,17 @@ def run_fbt_pipeline(fbt_weights : dict , client : str):
         
     # print("Grouped docs : ",grouped_docs)
     
-    
+    # final_es=df_to_es_docs(grouped_docs)
     push_to_es(
         INDEX_PREFIX=f"{client}_fbt_products",
-        ALIAS_NAME=f"{client}__fbt_products",
+        ALIAS_NAME=f"{client}_fbt_products",
         docs=grouped_docs
     )    
     
-    
-    # meili
-    # push_to_meili_fbt(
-    #     docs=grouped_docs,
-    #     index_name = f"{client}_fbt_products"
-    # )
-    # return grouped_docs
-    
-    
-    # elastice search
     grouped_docs = []
     for skuid_a, group in merged.groupby("skuid_A"):
         grouped_docs.append(fbt_group_to_es_doc(group))
     # print("Grouped docs : ",grouped_docs)
-    push_to_es(docs=grouped_docs, INDEX_PREFIX="fbt_recommendations", ALIAS_NAME="fbt")
+    # Removed global FBT index write to avoid cross-client contamination.
     print(f"✅ Pushed {len(grouped_docs)} FBT docs to ES")
-    return merged
+    return {"data": df_to_es_docs(merged)}

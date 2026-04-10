@@ -2,6 +2,7 @@ from ..services.popular_category_service import PopularCategoryService
 from fastapi import APIRouter, HTTPException, Query
 from typing import List
 from fastapi import APIRouter, Depends
+from recommendations.security import fetch_rate_limit
 
 
 router = APIRouter()
@@ -10,7 +11,7 @@ bestSellerService = PopularCategoryService()
 @router.post("/train")
 def train_popular_category(payload: dict):
 
-    client = payload.get("client")
+    client = payload.get("Client")
     settings = payload.get("settings", {})
 
     if not client:
@@ -30,6 +31,7 @@ def train_popular_category(payload: dict):
 def fetch_all_categories(
     client: str,   
     limit: int = 10,
+    _: None = Depends(fetch_rate_limit),
     
     
 ):
@@ -47,7 +49,8 @@ def fetch_categories(
     category_l2: str | None = Query(default=None),
     category_l3: str | None = Query(default=None),
     category_l4: str | None = Query(default=None),
-    limit: int = Query(default=20, ge=1, le=100)
+    limit: int = Query(default=20, ge=1, le=100),
+    _: None = Depends(fetch_rate_limit)
 ):
     try:
         filters = {

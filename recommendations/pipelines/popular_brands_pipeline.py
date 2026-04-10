@@ -129,4 +129,6 @@ def run_popular_brands(popular_brands_weights : dict , client : str):
     if not df.empty:
         docs = df_to_es_docs(df)
         push_to_es(docs=docs, ALIAS_NAME="popular_brands", INDEX_PREFIX="popular-brands")
+
+    return docs
         

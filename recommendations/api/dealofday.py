@@ -1,37 +1,17 @@
 from fastapi import APIRouter, HTTPException
 from ..services.dealofday_service import DealOfDayService
 from typing import List
-from fastapi import Query
+from fastapi import Query, Depends
 from ..schemas.schema import TrainDodRequest
+from recommendations.security import fetch_rate_limit
 
 router=APIRouter()
 dealOfDayService=DealOfDayService()
 
 @router.post("/train")
 def train_dealofday(payload: TrainDodRequest):
-    '''
-    Expected payload:
-    {
-        "client":"ssb",
-        "settings": {
-            "id":2,
-            "status": "active",
-            "min_discount_threshold": 5.0,
-            "max_discount_threshold": 35.0,
-            "min_stock": 20,
-            "rating_threshold": 4.2,
-            "min_reviews": 10,
-            "new_product_window_days": 25,
-            "final_score_threshold": 50.0,
-            "reviews_weight": 0.30,
-            "views_weight": 0.20,
-            "addtocart_weight": 0.25,
-            "rating_weight": 0.25
-        },
-        "level":["clothing","Men","Shoes"]
-    }
-    '''
-    client = payload.client
+
+    client = payload.Client
     settings = payload.settings
     levels = payload.levels
     
@@ -45,58 +25,85 @@ def train_dealofday(payload: TrainDodRequest):
 def fetch_dod_l1(
     l1: List[str] = Query(...),
     size: int = 5,
-    index_name: str = ""
+    index_name: str = Query(...),
+    _: None = Depends(fetch_rate_limit)
     ):
-    title_case_list = [item.lower() for item in l1]
-    offset = 0
+    try:
+        title_case_list = [item.lower() for item in l1 if item]
+        if not title_case_list:
+            raise HTTPException(status_code=400, detail="l1 parameter is required")
 
-    response = dealOfDayService.dealoftheday_fetch_l1(
-        index_name,
-        title_case_list,
-        size
-    )
-    return response
+        response = dealOfDayService.dealoftheday_fetch_l1(
+            index_name,
+            title_case_list,
+            size
+        )
+        return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     
     
 @router.get("/fetch/l2")
 def fetch_dod_l2(
     l2: List[str] = Query(...),
     size: int = 5,
-    index_name: str = ""  
+    index_name: str = Query(...),
+    _: None = Depends(fetch_rate_limit)
     ):
-    # title_case_list = [item.lower() for item in l2]
-    title_case_list = [item for item in l2]
-    
-    response = dealOfDayService.dealoftheday_fetch_l2(
-        index_name,
-        title_case_list,
-        size,
-    )
-    return response
+    try:
+        title_case_list = [item for item in l2 if item]
+        if not title_case_list:
+            raise HTTPException(status_code=400, detail="l2 parameter is required")
+
+        response = dealOfDayService.dealoftheday_fetch_l2(
+            index_name,
+            title_case_list,
+            size,
+        )
+        return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     
 
 @router.get("/fetch/l3")
 def fetch_dod_l3(
     l3: List[str] = Query(...),
     size: int =5,
-    index_name: str = ""
+    index_name: str = Query(...),
+    _: None = Depends(fetch_rate_limit)
 ):
-    title_case_list = [item for item in l3]
-    response = dealOfDayService.dealoftheday_fetch_l3(
-        index_name,
-        title_case_list,
-        size,
-    )
-    return response
+    try:
+        title_case_list = [item for item in l3 if item]
+        if not title_case_list:
+            raise HTTPException(status_code=400, detail="l3 parameter is required")
+
+        response = dealOfDayService.dealoftheday_fetch_l3(
+            index_name,
+            title_case_list,
+            size,
+        )
+        return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/fetch_all")
 def fetch_dod(
     size: int =5,
-    index_name: str = Query(...)
+    index_name: str = Query(...),
+    _: None = Depends(fetch_rate_limit)
 ):
-    response = dealOfDayService.dealoftheday_fetch_all(
-        index_name=index_name,
-        size=size
-    )
-    return response
+    try:
+        response = dealOfDayService.dealoftheday_fetch_all(
+            index_name=index_name,
+            size=size
+        )
+        return response
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

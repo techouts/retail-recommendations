@@ -1,24 +1,19 @@
 from ..exceptions.exceptions import BadRequestException , PipelineException
 from ..pipelines.dealofday_pipleline import run_dod_pipeline
 from recommendations.adapters.meili.searcher import search_meili
-from elasticsearch import Elasticsearch
-from elasticsearch_dsl import Search
-from dotenv import load_dotenv
-import os
+from recommendations.adapters.es.client import get_es_client
 
-load_dotenv()
-ES_HOST = os.getenv("ELASTICSEARCH_HOST")
-ES_PORT = os.getenv("ELASTICSEARCH_PORT")
 
-es = Elasticsearch(f"http://{ES_HOST}:{ES_PORT}")
+
+es = get_es_client()
 # ALIAS="deal_ofthe_day"
 
 import json
 # ALIAS="deal_ofthe_day"
 class DealOfDayService:
     
-    def trainDealOfDay( dealofday_settings:dict , client: str , levels : list):
-        try:
+    def trainDealOfDay( self,dealofday_settings:dict , client: str , levels : list):
+        try: 
             data= run_dod_pipeline(dealofday_settings,client ,levels)
             return {
                 "success":True,

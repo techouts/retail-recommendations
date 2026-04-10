@@ -43,13 +43,12 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
     print("Dod weights : ",dod_weights)
     # review_threshold = dod_weights.min_reviews
     
-    date_str = '2026-06-10'
-    date_obj = dt.strptime(date_str, '%Y-%m-%d').date()
+    # date_str = '2026-06-10'
+    # date_obj = dt.strptime(date_str, '%Y-%m-%d').date()
 
     # Filter PMR data
     pmrdf = pmr[
-        # (pmr["discount_enddate"].dt.date >= dt.today().date()) &
-        (pmr["discount_enddate"].dt.date >= date_obj) &
+        (pmr["discount_enddate"].dt.date >= dt.today().date()) &
         (pmr["discount_price"].between(dod_weights.min_discount_threshold, dod_weights.max_discount_threshold))
     ].copy()
     # print("PMR head : ", pmr.head(10))
@@ -113,7 +112,7 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
 
     
     print("Resultdf : ",resultdf.head(10))
-    dod_weights.min_reviews = 1
+    
     
     # Adaptive review filtering
     filtered = resultdf[resultdf["review_count"] >= dod_weights.min_reviews].copy()
@@ -226,7 +225,7 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
         ]].copy()
     
     
-    docs = es_df.to_dict(orient="records")
+    docs = df_to_es_docs(es_df)
  
     push_to_es(
         INDEX_PREFIX=f"{client}_deal_of_day",

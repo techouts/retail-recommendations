@@ -209,8 +209,8 @@ def push_to_meili_popular_brands(
         # 🔥 Delete existing index (full rebuild)
         client.delete_index(index_name)
         logger.debug("Deleted existing Popular Brands index '%s'", index_name)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Index '%s' did not exist or delete failed before rebuild: %s", index_name, exc)
 
     client.create_index(index_name, {"primaryKey": primary_key})
     index = client.index(index_name)

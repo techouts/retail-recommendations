@@ -4,6 +4,7 @@ import traceback
 from elasticsearch import Elasticsearch, helpers
 import numpy as np
 import pandas as pd
+from recommendations.adapters.es.client import get_es_client
 
 from dotenv import load_dotenv
 import os
@@ -12,11 +13,9 @@ import os
 # ELASTICSEARCH_HOST=14.192.1.134
 # ELASTICSEARCH_PORT=9200
 
-load_dotenv()
-ES_HOST = os.getenv("ELASTICSEARCH_HOST")
-ES_PORT = os.getenv("ELASTICSEARCH_PORT")
 
-es = Elasticsearch(f"http://{ES_HOST}:{ES_PORT}")
+
+es = get_es_client()
 
 
 def push_to_es(INDEX_PREFIX, ALIAS_NAME, docs: list[dict]):

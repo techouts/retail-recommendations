@@ -90,7 +90,7 @@ def train_dealofday(payload: dict):
     
     print("Settings : ",settings)
     
-    result = dealofdayService.trainDealOfDay(settings,client,levels)
+    result = dealOfDayService.trainDealOfDay(settings,client,levels)
     
     return result
 

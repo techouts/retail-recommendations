@@ -25,3 +25,16 @@ class TrainTrendingRequest(BaseModel):
 class TrainPopularCategoriesRequest(BaseModel):
     settings: dict
     Client: dict
+    
+class TrainDodRequest(BaseModel):
+    Client : str
+    settings : dict
+    levels : list
+    
+class TrainFbtProductsRequest(BaseModel):
+    Client : str
+    settings : dict
+    
+class TrainPopularBrandsRequest(BaseModel):
+    Client : str
+    settings : dict

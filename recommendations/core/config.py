@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     s3_bucket_name: str = "retail-search"
     s3_region: str = "ap-south-1"
     s3_endpoint_url: str = ""
+    s3_path: str = "s3://retail-search"
     s3_allowed_clients: str = ""
     s3_allowed_datasets: str = ""
     s3_max_upload_mb: int = 100

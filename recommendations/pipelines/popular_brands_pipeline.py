@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from ..utils.pipeline_utils import load_csv, normalize
+from ..utils.pipeline_utils import load_csv_from_s3, normalize
 from ..adapters.meili.indexer import push_to_meili , push_to_meili_fbt , push_to_meili_popular_brands
 from types import SimpleNamespace
 from itertools import combinations
@@ -25,19 +25,20 @@ def df_to_es_docs(df: pd.DataFrame) -> list[dict]:
 def run_popular_brands(popular_brands_weights : dict , client : str):
     
     weights = SimpleNamespace(**popular_brands_weights)
-    # weights = popular_brands_weights
     
-    catalog = pd.read_csv(os.path.join(CSV_DIR,"catalog.csv.csv"))
-    orders = pd.read_csv(os.path.join(CSV_DIR,"orders.csv.csv"))
-    analytics = pd.read_csv(os.path.join(CSV_DIR,"analytics.csv.csv"))
-    ratings = pd.read_csv(os.path.join(CSV_DIR,"customer_rating.csv"))
-    inventory = pd.read_csv(os.path.join(CSV_DIR,"inventory.csv.csv"))
+    s3_path = os.getenv("S3_PATH", "s3://retail-search")
+
+    # Load CSVs from S3 by client
+    catalog = load_csv_from_s3(s3_path, client, "catalog")
+    orders = load_csv_from_s3(s3_path, client, "orders")
+    analytics = load_csv_from_s3(s3_path, client, "analytics")
+    customer_rating = load_csv_from_s3(s3_path, client, "customer_rating")
+    inventory = load_csv_from_s3(s3_path, client, "inventory")
 
     
-    # catalog = catalog.rename(columns={"sku_id": "skuid"})
     orders = orders.merge(catalog[["sku_id", "brand"]], on="sku_id", how="left")
     analytics = analytics.merge(catalog[["sku_id", "brand"]], on="sku_id", how="left")
-    ratings = ratings.merge(catalog[["sku_id", "brand"]], on="sku_id", how="left")
+    customer_rating = customer_rating.merge(catalog[["sku_id", "brand"]], on="sku_id", how="left")
     inventory = inventory.merge(catalog[["sku_id", "brand"]], on="sku_id", how="left")
     
     orders_df = orders.groupby("brand").agg(
@@ -53,7 +54,7 @@ def run_popular_brands(popular_brands_weights : dict , client : str):
     
     print("Analytics df : ",analytics_df)
     
-    ratings_df = ratings.groupby("brand").agg(
+    ratings_df = customer_rating.groupby("brand").agg(
         avg_rating=("rating", "mean")
     ).reset_index()
     

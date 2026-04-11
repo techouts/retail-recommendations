@@ -2,31 +2,10 @@ import os
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from ..utils.pipeline_utils import load_csv, normalize
+from ..utils.pipeline_utils import load_csv_from_s3, normalize
 from ..adapters.meili.indexer import push_to_meili
 from types import SimpleNamespace
 from ..adapters.es.indexer import push_to_es
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CSV_DIR = os.path.join(BASE_DIR, "data", "processed")
-
-catalog = pd.read_csv(os.path.join(CSV_DIR,"catalog.csv.csv"))
-inventory = pd.read_csv(os.path.join(CSV_DIR,"inventory.csv.csv"))
-analytics = pd.read_csv(os.path.join(CSV_DIR,"analytics.csv.csv"))
-customer_rating = pd.read_csv(os.path.join(CSV_DIR,"customer_rating.csv"))
-pmr = pd.read_csv(os.path.join(CSV_DIR,"pmr.csv.csv"))
-
-catalog["created_at"] = pd.to_datetime(catalog["created_at"], errors="coerce")
-pmr["discount_enddate"] = pd.to_datetime(pmr["discount_enddate"], errors="coerce")
-
-def normalize(series):
-    if series.max() == series.min():
-        return pd.Series([0.5] * len(series), index=series.index)   
-    return (series - series.min()) / (series.max() - series.min())
-
-# def get_dod_settings():
-#     return DealOfTheDaySetting.objects.filter(id=1).first()
-
 
 def df_to_es_docs(df: pd.DataFrame) -> list[dict]:
     
@@ -41,20 +20,32 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
     dod_weights = SimpleNamespace(**DealOfDayWeights)
     
     print("Dod weights : ",dod_weights)
-    # review_threshold = dod_weights.min_reviews
     
-    # date_str = '2026-06-10'
-    # date_obj = dt.strptime(date_str, '%Y-%m-%d').date()
+    s3_path = os.getenv("S3_PATH", "s3://retail-search")
+
+    # Load CSVs from S3 by client
+    catalog = load_csv_from_s3(s3_path, client, "catalog")
+    inventory = load_csv_from_s3(s3_path, client, "inventory")
+    analytics = load_csv_from_s3(s3_path, client, "analytics")
+    customer_rating = load_csv_from_s3(s3_path, client, "customer_rating")
+    pmr = load_csv_from_s3(s3_path, client, "pmr")
+
+    catalog["created_at"] = pd.to_datetime(catalog["created_at"], errors="coerce")
+    pmr["discount_enddate"] = pd.to_datetime(pmr["discount_enddate"], errors="coerce")
+
+    def normalize(series):
+        if series.max() == series.min():
+            return pd.Series([0.5] * len(series), index=series.index)   
+        return (series - series.min()) / (series.max() - series.min())
 
     # Filter PMR data
     pmrdf = pmr[
         (pmr["discount_enddate"].dt.date >= dt.today().date()) &
         (pmr["discount_price"].between(dod_weights.min_discount_threshold, dod_weights.max_discount_threshold))
     ].copy()
-    # print("PMR head : ", pmr.head(10))
     print("Today date : ",dt.today().date())
     print("pmrdf: ",pmrdf.head(100))
-    # print("Catalog head : ",catalog.head(10))
+    
     # Filter catalog by L3 and PMR SKUs
     catalogdf = catalog[
         (catalog["category_l3"].isin(levels)) & (catalog["sku_id"].isin(pmrdf["sku_id"]))

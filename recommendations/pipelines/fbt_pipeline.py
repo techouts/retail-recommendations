@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from ..utils.pipeline_utils import load_csv, normalize
+from ..utils.pipeline_utils import load_csv_from_s3, normalize
 from ..adapters.meili.indexer import push_to_meili , push_to_meili_fbt
 from types import SimpleNamespace
 from itertools import combinations
@@ -174,30 +174,19 @@ def run_fbt_pipeline(fbt_weights : dict , client : str):
     LIFT_MIN = weights.lift_min
     PRICE_TOLERANCE = weights.price_tolerance
     
-    # print("Freq threshold : ",FREQ_THRESHOLD)
-    # print("Confidence min : ",CONFIDENCE_MIN)
-    
-    catalog_path = os.path.join(BASE_DIR,"data","processed","catalog.csv.csv")
-    orders_path = os.path.join(BASE_DIR,"data","processed", "orders.csv.csv")
-    inventory_path = os.path.join(BASE_DIR,"data","processed", "inventory.csv.csv")
-    
-    catalog = pd.read_csv(catalog_path)
-    # print("Catalog columns : ",catalog.columns)
-    orders = pd.read_csv(orders_path)
-    inventory = pd.read_csv(inventory_path)
+    s3_path = os.getenv("S3_PATH", "s3://retail-search")
+
+    # Load CSVs from S3 by client
+    catalog = load_csv_from_s3(s3_path, client, "catalog")
+    orders = load_csv_from_s3(s3_path, client, "orders")
+    inventory = load_csv_from_s3(s3_path, client, "inventory")
     
     inventorydf = inventory[inventory["stock_quantity"] >= 1]
-    # print("Inventory df : ",inventorydf.head(10))
     catalogdf = catalog[catalog["sku_id"].isin(inventorydf["sku_id"])]
-    # print("Catalog df : ",catalogdf.head(10))
     ordersdf = orders[orders["sku_id"].isin(inventorydf["sku_id"])]
-    # print("Orders df : ",ordersdf.head(10)) 
     
     pairsdf = product_pairs(ordersdf.groupby("order_id")["sku_id"].apply(list))
-    # print("Pairs generated:", len(pairsdf))
-    # print("Pair DF : ",pairsdf.head(10))
     supportdf = calculate_support(ordersdf, pairsdf)
-    # print("Support DF : ",supportdf.head(20))
     # supportdf.to_csv("supportdf_debug.csv", index=False)
     
     # supportdf = supportdf[supportdf["OrderCount"] >= FREQ_THRESHOLD]

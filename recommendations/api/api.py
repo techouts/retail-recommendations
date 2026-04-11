@@ -1,3 +1,12 @@
+from fastapi import APIRouter, Depends
+from ..services.trending_service import TrendingService
+from recommendations.services.dealofday_service import DealOfDayService
+from recommendations.services.fbt_service import FrequentlyBoughtTogetherService
+from typing import List
+from fastapi import Query
+from pydantic import BaseModel
+
+
 from ..services.trending_service import TrendingService,BestSellerService
 from recommendations.adapters.meili.searcher import search_meili
 from fastapi import APIRouter, Query, HTTPException, Request
@@ -14,6 +23,8 @@ trendingService=TrendingService()
 categoryService=PopularCategoryService()
 bestSellerService = BestSellerService()
 dealOfDayService=DealOfDayService()
+
+fbtService = FrequentlyBoughtTogetherService()
 
 
 @router.post("/trending/train")
@@ -79,8 +90,29 @@ def train_dealofday(payload: dict):
     
     print("Settings : ",settings)
     
-    result = DealOfDayService().trainDealOfDay(settings,client,levels)
+    result = dealOfDayService.trainDealOfDay(settings,client,levels)
     
+    return result
+
+@router.post("/trending/train-fbt")
+def train_fbt(payload:dict):
+    client = payload.get("client")
+    settings = payload.get("settings")
+    print("Settings : ",settings)
+    result = FrequentlyBoughtTogetherService().trainFrequentlyBoughtTogether(settings,client)
+    
+    return result
+
+@router.get("/fetch/fbt")
+def recommendation(index_name: str, product_id: str, top_n: int = 5):
+    print("Index name:", index_name)
+
+    result = fbtService.fetch_fbt_products(
+        product_id=product_id,
+        index_name=index_name,
+        top_n=top_n
+    )
+
     return result
 
 @router.get("/fetch/dealofday/l1")
@@ -140,16 +172,19 @@ def fetch_dod_l3(
 def fetch_dod(
     l1: List[str] = Query(...),
     l2: List[str] = Query(...),
+    l3: List[str] = Query(...),
     size: int = 5,
     index_name: str = Query(...)
 ):
     title_case_list_l1 = [item.title() for item in l1]
     title_case_list_l2 = [item.title() for item in l2]
+    title_case_list_l3 = [item.title() for item in l3]
     offset=0
     response = dealOfDayService.dealofday_fetch(
         index_name=index_name,
         l1list=title_case_list_l1,
         l2list=title_case_list_l2,
+        l3list=title_case_list_l3,
         limit=size,
         offset=offset
     )

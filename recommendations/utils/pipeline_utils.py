@@ -6,16 +6,13 @@ import os
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CSV_DIR = os.path.join(BASE_DIR, "pipelines", "data", "processed")
 
-def normalize(series: pd.Series):
-    series = series.fillna(0)
-
+def normalize(series):
     min_val = series.min()
     max_val = series.max()
-
+    
     if max_val == min_val:
-        return pd.Series([0.5] * len(series), index=series.index)  
-        # 👈 neutral score instead of 1.0
-
+        return pd.Series([0.0] * len(series), index=series.index)
+    
     return (series - min_val) / (max_val - min_val)
 
 def load_csv(name: str) -> pd.DataFrame:

@@ -1,243 +1,500 @@
-import os
-import pandas as pd
-import numpy as np
+"""
+trending_pipeline.py
+--------------------
+Fully rewritten trending pipeline with:
+  - Dynamic category levels (L1 → L4, or however many exist)
+  - All bug fixes from review (merged.get, `or` fallback, dead code, logging)
+  - Clean separation of concerns — each step is its own function
+  - Pydantic-validated weights
+  - Structured logging throughout
+"""
+
+from __future__ import annotations
+
+import logging
+import math
 from datetime import datetime, timedelta
-from ..utils.pipeline_utils import load_csv, normalize
-from ..adapters.meili.indexer import push_to_meili
+from typing import Any
+
+import numpy as np
+import pandas as pd
+from pydantic import BaseModel, Field
 from types import SimpleNamespace
 
+from ..utils.pipeline_utils import load_csv, normalize
+from ..adapters.meili.indexer import push_to_meili
 
-# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# CSV_DIR = os.path.join(BASE_DIR, "data", "processed")
+logger = logging.getLogger(__name__)
 
 
-def ensure_datetime(df: pd.DataFrame, col: str):
-    if col in df.columns:
-        df[col] = pd.to_datetime(df[col], errors="coerce")
+# ─────────────────────────────────────────────
+# 1. Validated weights model (replaces SimpleNamespace + `or` hacks)
+# ─────────────────────────────────────────────
+
+class TrendingWeightsModel(BaseModel):
+    # Internal time-decay weights for each signal
+    internal_sales_24h: float = 40.0
+    internal_sales_3d:  float = 30.0
+    internal_sales_7d:  float = 30.0
+
+    internal_views_24h: float = 40.0
+    internal_views_3d:  float = 40.0
+    internal_views_7d:  float = 20.0
+
+    internal_cart_24h:  float = 40.0
+    internal_cart_3d:   float = 30.0
+    internal_cart_7d:   float = 30.0
+
+    internal_wish_24h:  float = 40.0
+    internal_wish_3d:   float = 30.0
+    internal_wish_7d:   float = 30.0
+
+    # Business-level signal weights (must sum to ~1.0)
+    business_sales_weight: float = 0.5
+    business_views_weight: float = 0.1
+    business_cart_weight:  float = 0.3
+    business_wish_weight:  float = 0.1
+
+    # Thresholds
+    threshold_value:       float = 64.0
+    min_threshold_relaxed: float = 30.0
+
+    # Category caps
+    max_per_leaf_category: int   = 10   # cap per deepest (leaf) level
+    min_per_l2_category:   int   = 10   # minimum fill target for L2
+
+
+# ─────────────────────────────────────────────
+# 2. deep_clean — safe for all types
+# ─────────────────────────────────────────────
+
+def deep_clean(obj: Any) -> Any:
+    """
+    Recursively clean an object for JSON serialisation.
+    Handles dicts, lists, numpy scalars, pandas NaT/NaN, and Python floats.
+    Safe: only calls pd.isna on scalar types to avoid ambiguous truth-value errors.
+    """
+    if isinstance(obj, dict):
+        return {k: deep_clean(v) for k, v in obj.items()}
+
+    if isinstance(obj, list):
+        return [deep_clean(v) for v in obj]
+
+    if isinstance(obj, (np.float32, np.float64, float)):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return float(obj)
+
+    if isinstance(obj, (np.int32, np.int64)):
+        return int(obj)
+
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
+
+    # Only call pd.isna on safe scalar types — avoids ValueError on arrays
+    if isinstance(obj, (type(pd.NaT), type(None))):
+        return None
+    try:
+        if pd.isna(obj):
+            return None
+    except (TypeError, ValueError):
+        pass  # array-like or un-checkable — leave as-is
+
+    return obj
+
+
+# ─────────────────────────────────────────────
+# 3. Data loading and normalisation
+# ─────────────────────────────────────────────
+
+_COLUMN_ALIASES = {
+    "sku_id":    "skuid",
+    "timestamp": "created_at",
+    "date":      "created_at",
+    "createdat": "created_at",
+}
+
+_DATETIME_COLS = {"created_at"}
+
+
+def _normalise_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Strip, lowercase, and unify column names."""
+    df.columns = df.columns.str.strip().str.lower()
+    df = df.rename(columns={k: v for k, v in _COLUMN_ALIASES.items() if k in df.columns})
+    for col in _DATETIME_COLS:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
     return df
 
-def aggregate_signals(df: pd.DataFrame, value_col: str,
-                time_24h: datetime, time_3d: datetime, time_7d: datetime,) -> pd.DataFrame:
-    df_24h = df[df['created_at'] >= time_24h]
-    df_3d = df[df['created_at'] >= time_3d]
-    df_7d = df[df['created_at'] >= time_7d]
 
-    agg_24h = df_24h.groupby("skuid")[value_col].sum().rename("24h")
-    agg_3d = df_3d.groupby("skuid")[value_col].sum().rename("3d")
-    agg_7d = df_7d.groupby("skuid")[value_col].sum().rename("7d")
+def load_and_normalise() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Load all source CSVs and normalise column names/types."""
+    catalog_df     = _normalise_df(load_csv("catalog.csv"))
+    analytics_df   = _normalise_df(load_csv("analytics.csv"))
+    fulfillment_df = _normalise_df(load_csv("fulfillment.csv"))
+    inventory_df   = _normalise_df(load_csv("inventory.csv"))
+
+    logger.info(
+        "Loaded rows — catalog=%d analytics=%d fulfillment=%d inventory=%d",
+        len(catalog_df), len(analytics_df), len(fulfillment_df), len(inventory_df),
+    )
+    return catalog_df, analytics_df, fulfillment_df, inventory_df
+
+
+# ─────────────────────────────────────────────
+# 4. Eligible product filtering
+# ─────────────────────────────────────────────
+
+def get_eligible_skuids(inventory_df: pd.DataFrame, min_stock: int = 2) -> pd.Series:
+    """Return skuids with total stock > min_stock."""
+    stock_totals = inventory_df.groupby("skuid", as_index=False)["stock_quantity"].sum()
+    eligible = stock_totals.loc[stock_totals["stock_quantity"] > min_stock, "skuid"]
+    logger.info("Eligible skuids (stock > %d): %d", min_stock, len(eligible))
+    return eligible
+
+
+# ─────────────────────────────────────────────
+# 5. Signal aggregation
+# ─────────────────────────────────────────────
+
+def _aggregate_one_signal(
+    df: pd.DataFrame,
+    value_col: str,
+    time_24h: datetime,
+    time_3d: datetime,
+    time_7d: datetime,
+    metric_name: str,
+) -> pd.DataFrame:
+    """
+    Aggregate a single signal (e.g. view_count) across three time windows.
+    Returns a DataFrame with columns: skuid, 24h_{metric}, 3d_{metric}, 7d_{metric}
+    """
+    if value_col not in df.columns:
+        logger.warning("Column '%s' not found — filling signal '%s' with zeros.", value_col, metric_name)
+        skuids = df["skuid"].unique() if "skuid" in df.columns else pd.Series([], dtype=str)
+        empty = pd.DataFrame({"skuid": skuids})
+        for period in ("24h", "3d", "7d"):
+            empty[f"{period}_{metric_name}"] = 0.0
+        return empty
+
+    agg_24h = df[df["created_at"] >= time_24h].groupby("skuid")[value_col].sum().rename(f"24h_{metric_name}")
+    agg_3d  = df[df["created_at"] >= time_3d ].groupby("skuid")[value_col].sum().rename(f"3d_{metric_name}")
+    agg_7d  = df[df["created_at"] >= time_7d ].groupby("skuid")[value_col].sum().rename(f"7d_{metric_name}")
 
     return pd.concat([agg_24h, agg_3d, agg_7d], axis=1).fillna(0).reset_index()
 
 
-def run_trending_pipeline(TrendingWeights: dict,client: str):
-    # Load data
-    catalog_df     = load_csv("catalog.csv")
-    analytics_df   = load_csv("analytics.csv")
-    fulfillment_df = load_csv("fulfillment.csv")
-    inventory_df   = load_csv("inventory.csv")
-
-    for df in [catalog_df, analytics_df, fulfillment_df, inventory_df]:
-        df.columns = df.columns.str.strip().str.lower()
-
-       
-        if "sku_id" in df.columns:
-            df.rename(columns={"sku_id": "skuid"}, inplace=True)
-
-        if "timestamp" in df.columns:
-            df.rename(columns={"timestamp": "created_at"}, inplace=True)
-        elif "date" in df.columns:
-            df.rename(columns={"date": "created_at"}, inplace=True)
-        elif "createdat" in df.columns:
-            df.rename(columns={"createdat": "created_at"}, inplace=True)
-    
-
-    analytics_df = ensure_datetime(analytics_df, "created_at")
-    fulfillment_df = ensure_datetime(fulfillment_df, "created_at")
-    catalog_df=ensure_datetime(catalog_df,"created_at")
-    analytics_df=ensure_datetime(analytics_df,"created_at")
-    inventory_df=ensure_datetime(inventory_df,"created_at")
-    print(analytics_df)
-    now = datetime.now()
+def compute_signals(
+    analytics_df: pd.DataFrame,
+    fulfillment_df: pd.DataFrame,
+    eligible_skuids: pd.Series,
+    now: datetime,
+) -> pd.DataFrame:
+    """
+    Compute all four signals for eligible products.
+    Returns a merged DataFrame with all 12 signal columns.
+    """
     time_24h = now - timedelta(hours=24)
     time_3d  = now - timedelta(days=3)
     time_7d  = now - timedelta(days=7)
 
-    stock_totals = inventory_df.groupby('skuid', as_index=False)['stock_quantity'].sum()
-    
-    eligible_products = stock_totals.loc[stock_totals['stock_quantity'] > 2, 'skuid']
-    
+    analytics_eligible   = analytics_df[analytics_df["skuid"].isin(eligible_skuids)]
+    fulfillment_eligible = fulfillment_df[fulfillment_df["skuid"].isin(eligible_skuids)]
 
-    analytics_filtered = analytics_df[analytics_df['skuid'].isin(eligible_products)]
-    
-    if 'status' in fulfillment_df.columns:
-        status_series = fulfillment_df['status'].astype(str).str.lower()
-        fulfillment_filtered = fulfillment_df[
-            (fulfillment_df['skuid'].isin(eligible_products)) &
-            (status_series != 'cancelled')
+    # Exclude cancelled orders
+    if "status" in fulfillment_eligible.columns:
+        fulfillment_eligible = fulfillment_eligible[
+            fulfillment_eligible["status"].astype(str).str.lower() != "cancelled"
         ]
-    else:
-        fulfillment_filtered = fulfillment_df[fulfillment_df['skuid'].isin(eligible_products)]
-    
-    sales_agg = aggregate_signals(fulfillment_filtered, "quantity", time_24h, time_3d, time_7d)
-    sales_agg.columns = ['skuid', '24h_sales', '3d_sales', '7d_sales']
 
-    views_agg = aggregate_signals(analytics_filtered, "view_count", time_24h, time_3d, time_7d)
-    views_agg.columns = ['skuid', '24h_views', '3d_views', '7d_views']
-
-    cart_agg = aggregate_signals(analytics_filtered, "addtocart_count", time_24h, time_3d, time_7d)
-    cart_agg.columns = ['skuid', '24h_cart', '3d_cart', '7d_cart']
-
-    wish_agg = aggregate_signals(analytics_filtered, "wishlist_count", time_24h, time_3d, time_7d)
-    wish_agg.columns = ['skuid', '24h_wish', '3d_wish', '7d_wish']
+    sales_agg = _aggregate_one_signal(fulfillment_eligible, "quantity",        time_24h, time_3d, time_7d, "sales")
+    views_agg = _aggregate_one_signal(analytics_eligible,  "view_count",       time_24h, time_3d, time_7d, "views")
+    cart_agg  = _aggregate_one_signal(analytics_eligible,  "addtocart_count",  time_24h, time_3d, time_7d, "cart")
+    wish_agg  = _aggregate_one_signal(analytics_eligible,  "wishlist_count",   time_24h, time_3d, time_7d, "wish")
 
     merged = (
         sales_agg
-        .merge(views_agg, on="skuid", how="left")
-        .merge(cart_agg,  on="skuid", how="left")
-        .merge(wish_agg,  on="skuid", how="left")
+        .merge(views_agg, on="skuid", how="outer")
+        .merge(cart_agg,  on="skuid", how="outer")
+        .merge(wish_agg,  on="skuid", how="outer")
         .fillna(0)
     )
-    
-    weights = SimpleNamespace(**TrendingWeights)
-    
+    logger.info("Signal merge produced %d rows", len(merged))
+    return merged
 
+
+# ─────────────────────────────────────────────
+# 6. Scoring
+# ─────────────────────────────────────────────
+
+_SIGNAL_PERIODS = {
+    "sales": ["24h", "3d", "7d"],
+    "views": ["24h", "3d", "7d"],
+    "cart":  ["24h", "3d", "7d"],
+    "wish":  ["24h", "3d", "7d"],
+}
+
+def score_products(merged: pd.DataFrame, weights: TrendingWeightsModel) -> pd.DataFrame:
+    """
+    Apply time-decay internal weights then business weights to produce trending_score.
+    """
     internal_weights = {
-        "sales": {"24h": getattr(weights, "internal_sales_24h", 40), "3d": getattr(weights,"internal_sales_3d",30), "7d": getattr(weights,"internal_sales_7d",30)},
-        "views": {"24h":getattr(weights,"internal_views_24h",40), "3d": getattr(weights,"internal_views_3d",40), "7d": getattr(weights,"internal_views_7d",20)},
-        "cart":  {"24h": getattr(weights,"internal_cart_24h",40),  "3d": getattr(weights,"internal_cart_3d",30),  "7d":getattr(weights,"internal_cart_7d",30)},
-        "wish":  {"24h": getattr(weights,"internal_wish_24h",40),  "3d": getattr(weights,"internal_wish_3d",30),  "7d": getattr(weights,"internal_wish_7d",30)},
+        "sales": {"24h": weights.internal_sales_24h, "3d": weights.internal_sales_3d, "7d": weights.internal_sales_7d},
+        "views": {"24h": weights.internal_views_24h, "3d": weights.internal_views_3d, "7d": weights.internal_views_7d},
+        "cart":  {"24h": weights.internal_cart_24h,  "3d": weights.internal_cart_3d,  "7d": weights.internal_cart_7d},
+        "wish":  {"24h": weights.internal_wish_24h,  "3d": weights.internal_wish_3d,  "7d": weights.internal_wish_7d},
     }
-
     business_weights = {
-        "sales": weights.business_sales_weight or 0.5,
-        "views": weights.business_views_weight or 0.1,
-        "cart":  weights.business_cart_weight  or 0.3,
-        "wish":  weights.business_wish_weight  or 0.1,
+        "sales": weights.business_sales_weight,
+        "views": weights.business_views_weight,
+        "cart":  weights.business_cart_weight,
+        "wish":  weights.business_wish_weight,
     }
 
-    threshold_value = weights.threshold_value or 64
+    df = merged.copy()
 
-    # ---------------------------
-    # Step 3: Compute weighted metrics
-    # ---------------------------
-    for metric in ["sales", "views", "cart", "wish"]:
-        merged[f"weighted_{metric}"] = 0.0
-        for period, w in internal_weights[metric].items():
-            merged[f"weighted_{metric}"] += (w or 0.0) * merged.get(f"{period}_{metric}", 0.0)
-    
-    # ---------------------------
-    # Step 4: Compute trending_score
-    # ---------------------------
-    merged["trending_score"] = 0.0
+    # Step A: time-decay weighted sum per signal
+    for metric, periods in internal_weights.items():
+        df[f"weighted_{metric}"] = 0.0
+        for period, w in periods.items():
+            col = f"{period}_{metric}"
+            # ✅ Fixed: safe column access — no DataFrame.get() misuse
+            signal_vals = df[col] if col in df.columns else 0.0
+            df[f"weighted_{metric}"] += w * signal_vals
+
+    # Step B: normalise + apply business weights
+    df["trending_score"] = 0.0
     for metric, bw in business_weights.items():
-        merged[f"norm_{metric}"] = normalize(merged[f"weighted_{metric}"])
-        merged[f"norm_with_{metric}"] = (bw or 0.0) * merged[f"norm_{metric}"]
-        merged["trending_score"] += merged[f"norm_with_{metric}"]
+        df[f"norm_{metric}"] = normalize(df[f"weighted_{metric}"])
+        df["trending_score"] += bw * df[f"norm_{metric}"]
 
-    
-    merged["trending_score"] *= 100
-    merged["is_trending"] = merged["trending_score"] >= threshold_value
-    print("merged ",merged["trending_score"])
-    merged["is_threshold_relaxed"] = False
+    df["trending_score"]  *= 100
+    df["is_trending"]      = df["trending_score"] >= weights.threshold_value
+    df["is_threshold_relaxed"] = False
 
-    catalog_with_metrics = catalog_df.merge(merged, on="skuid", how="inner")
-    
-    # ---------------------------
-    # Step 5: Hard cap per L3 = 10 trending products
-    # ---------------------------
+    logger.info(
+        "Scoring complete — trending=%d / total=%d (threshold=%.1f)",
+        df["is_trending"].sum(), len(df), weights.threshold_value,
+    )
+    return df
+
+
+# ─────────────────────────────────────────────
+# 7. Dynamic category capping
+# ─────────────────────────────────────────────
+
+def _detect_category_levels(df: pd.DataFrame) -> list[str]:
+    """
+    Detect all category_lN columns that exist in the DataFrame.
+    Returns them sorted: ['category_l1', 'category_l2', 'category_l3', 'category_l4', ...]
+    Handles any depth — L2, L3, L4, or beyond.
+    """
+    levels = sorted(
+        [c for c in df.columns if c.startswith("category_l") and c[len("category_l"):].isdigit()],
+        key=lambda c: int(c[len("category_l"):])
+    )
+    logger.info("Detected category levels: %s", levels)
+    return levels
+
+
+def apply_caps_and_fill(
+    catalog_with_metrics: pd.DataFrame,
+    weights: TrendingWeightsModel,
+) -> pd.DataFrame:
+    """
+    Dynamic category capping:
+
+    1. Detect all category levels (L1→LN) from the catalog columns.
+    2. Cap trending products at `max_per_leaf_category` per *leaf* level (deepest LN).
+    3. For each L2 group, ensure at least `min_per_l2_category` products by
+       pulling in sub-threshold candidates (respecting the leaf cap).
+
+    Works correctly whether the data has L3, L4, or any depth.
+    """
+    cat_levels = _detect_category_levels(catalog_with_metrics)
+
+    if len(cat_levels) < 2:
+        logger.warning("Fewer than 2 category levels found — skipping cap logic.")
+        return catalog_with_metrics[catalog_with_metrics["is_trending"]].copy()
+
+    leaf_col = cat_levels[-1]   # deepest level, e.g. category_l4 or category_l3
+    l2_col   = cat_levels[1]    # always category_l2 (index 1)
+
+    max_per_leaf = weights.max_per_leaf_category
+    min_per_l2   = weights.min_per_l2_category
+    threshold    = weights.threshold_value
+    min_relaxed  = weights.min_threshold_relaxed
+
+    # ── Step A: cap trending products per leaf category ──
     trending_only = catalog_with_metrics[catalog_with_metrics["is_trending"]].copy()
-    capped_trending_l3 = (
+
+    capped = (
         trending_only
-        .sort_values(by=["category_l3", "trending_score"], ascending=[True, False])
-        .groupby("category_l3", sort=False)
-        .head(10)
+        .sort_values(by=[leaf_col, "trending_score"], ascending=[True, False])
+        .groupby(leaf_col, sort=False)
+        .head(max_per_leaf)
         .reset_index(drop=True)
     )
-    l3_counts = capped_trending_l3["category_l3"].value_counts().to_dict()
 
+    # Track counts per leaf so the fill pass can respect the same cap
+    leaf_counts: dict[str, int] = capped[leaf_col].value_counts().to_dict()
 
+    logger.info(
+        "After leaf cap (%s ≤ %d): %d trending products across %d leaf categories",
+        leaf_col, max_per_leaf, len(capped), len(leaf_counts),
+    )
 
-    # ---------------------------
-    # Step 6: Ensure at least 10 per L2 (fallback from same-L2 only)
-    # ---------------------------
-    min_threshold_relaxed = weights.min_threshold_relaxed
-    print(min_threshold_relaxed)
-    final_l2_blocks = []
-    for l2_val in catalog_with_metrics["category_l2"].dropna().unique():
-        selected = capped_trending_l3[capped_trending_l3["category_l2"] == l2_val].copy()
-        selected_ids = set(selected["skuid"].astype(str).tolist())
-        curr_count = len(selected)
+    # ── Step B: fill L2 groups to minimum ──
+    final_blocks: list[pd.DataFrame] = []
 
-        if curr_count < 10:
-            deficit = 10 - curr_count
+    for l2_val in catalog_with_metrics[l2_col].dropna().unique():
+        selected     = capped[capped[l2_col] == l2_val].copy()
+        selected_ids = set(selected["skuid"].astype(str))
+        deficit      = max(0, min_per_l2 - len(selected))
+
+        if deficit > 0:
             candidates = (
                 catalog_with_metrics[
-                    
-                    (catalog_with_metrics["category_l2"] == l2_val) &
-                    (catalog_with_metrics["trending_score"] >= min_threshold_relaxed) &
-                    (catalog_with_metrics["trending_score"] < threshold_value) &
+                    (catalog_with_metrics[l2_col] == l2_val) &
+                    (catalog_with_metrics["trending_score"] >= min_relaxed) &
+                    (catalog_with_metrics["trending_score"] <  threshold) &
                     (~catalog_with_metrics["skuid"].astype(str).isin(selected_ids)) &
                     (~catalog_with_metrics["is_trending"])
                 ]
-                .copy()
-                .sort_values(by="trending_score", ascending=False)
+                .sort_values("trending_score", ascending=False)
             )
 
-            picks = []
+            picks: list[pd.Series] = []
             for _, cand in candidates.iterrows():
                 if deficit <= 0:
                     break
-                cand_l3 = cand.get("category_l3")
-                if pd.isna(cand_l3):
+                cand_leaf = cand.get(leaf_col)
+                if pd.isna(cand_leaf):
                     continue
-                if l3_counts.get(cand_l3, 0) >= 10:  # enforce L3 cap
+                if leaf_counts.get(cand_leaf, 0) >= max_per_leaf:
                     continue
 
-                cand_copy = cand.copy()
-                cand_copy["is_threshold_relaxed"] = True
-                cand_copy["is_trending"] = False
-                picks.append(cand_copy)
+                row = cand.copy()
+                row["is_threshold_relaxed"] = True
+                row["is_trending"]          = False
+                picks.append(row)
 
-                l3_counts[cand_l3] = l3_counts.get(cand_l3, 0) + 1
+                leaf_counts[cand_leaf] = leaf_counts.get(cand_leaf, 0) + 1
                 deficit -= 1
 
-            selected = pd.concat([selected, pd.DataFrame(picks)], ignore_index=True)
+            if picks:
+                selected = pd.concat([selected, pd.DataFrame(picks)], ignore_index=True)
 
-        final_l2_blocks.append(selected)
-    
-    # ---------------------------
-    # Step 7: Combine & save final selection
-    # ---------------------------
-    valid_blocks = [blk for blk in final_l2_blocks if not blk.empty]
-    if not valid_blocks:
-        print("⚠️ No data available after L2 processing. Returning empty result.")
-        return []
-    final_selected = (
-        pd.concat([blk for blk in final_l2_blocks if not blk.empty], ignore_index=True)
-        if final_l2_blocks else pd.DataFrame(columns=catalog_with_metrics.columns)
+        logger.debug("L2=%s final count=%d", l2_val, len(selected))
+        final_blocks.append(selected)
+
+    if not final_blocks:
+        logger.warning("No blocks after fill pass — returning empty DataFrame.")
+        return pd.DataFrame(columns=catalog_with_metrics.columns)
+
+    result = (
+        pd.concat(final_blocks, ignore_index=True)
+        .drop_duplicates(subset=["skuid"])
+        .sort_values("trending_score", ascending=False)
+        .reset_index(drop=True)
     )
-    final_selected = final_selected.drop_duplicates(subset=["skuid"]) \
-                               .sort_values(by="trending_score", ascending=False)
+    logger.info("Final selection: %d products", len(result))
+    return result
 
-    if not final_selected.empty:
 
-        #  Fix JSON issues
-        final_selected = final_selected.replace([np.inf, -np.inf], None)
-        final_selected = final_selected.where(final_selected.notna(), None)
+# ─────────────────────────────────────────────
+# 8. Meili payload preparation
+# ─────────────────────────────────────────────
 
-        meili_df = final_selected[[
-            "skuid", "category_l1", "category_l2", "category_l3",
-            "display_title", "brand", "selling_price",
-            "trending_score", "is_trending", "is_threshold_relaxed","image_urls"
-        ]].copy()
+_MEILI_BASE_COLS = [
+    "skuid", "display_title", "brand", "selling_price",
+    "trending_score", "is_trending", "is_threshold_relaxed", "image_urls",
+]
 
-        docs = meili_df.to_dict(orient="records")
+def build_meili_docs(
+    final_df: pd.DataFrame,
+    cat_levels: list[str],
+) -> list[dict]:
+    """
+    Select columns for Meilisearch, including all detected category levels dynamically.
+    Applies deep_clean and returns a list of plain dicts.
+    """
+    # include whichever base cols actually exist
+    cols = [c for c in _MEILI_BASE_COLS if c in final_df.columns]
+    # add all detected category level columns
+    cols += [c for c in cat_levels if c in final_df.columns]
 
-        push_to_meili(
-            docs=docs,
-            index_name=f"{client}_trending_products"
-        )
-        
-        return final_selected.to_dict(orient="records")
+    subset = final_df[cols].copy()
 
-    return []   
+    # Replace inf/NaN at the DataFrame level before dict conversion
+    subset = subset.replace([np.inf, -np.inf], np.nan)
+    subset = subset.where(subset.notna(), None)
+
+    docs = deep_clean(subset.to_dict(orient="records"))
+    logger.info("Built %d Meilisearch documents", len(docs))
+    return docs
+
+
+# ─────────────────────────────────────────────
+# 9. Main pipeline entry point
+# ─────────────────────────────────────────────
+
+def run_trending_pipeline(trending_weights: dict, client: str) -> list[dict]:
+    """
+    Orchestrates the full trending pipeline:
+
+      1. Validate weights
+      2. Load & normalise source data
+      3. Filter eligible products
+      4. Compute signals (sales, views, cart, wish) across 24h / 3d / 7d
+      5. Score products
+      6. Merge scores with catalog
+      7. Apply dynamic category caps + L2 fill
+      8. Build and push Meilisearch documents
+
+    Returns the list of pushed documents (or [] on empty result).
+    """
+    # ── 1. Validate weights ──
+    weights = TrendingWeightsModel(**trending_weights)
+    logger.info("Pipeline started for client='%s' threshold=%.1f", client, weights.threshold_value)
+
+    # ── 2. Load ──
+    catalog_df, analytics_df, fulfillment_df, inventory_df = load_and_normalise()
+
+    # ── 3. Eligible products ──
+    eligible_skuids = get_eligible_skuids(inventory_df)
+    if eligible_skuids.empty:
+        logger.warning("No eligible products found — aborting pipeline.")
+        return []
+
+    # ── 4. Signals ──
+    now    = datetime.now()
+    merged = compute_signals(analytics_df, fulfillment_df, eligible_skuids, now)
+
+    # ── 5. Score ──
+    scored = score_products(merged, weights)
+
+    # ── 6. Merge with catalog ──
+    catalog_with_metrics = catalog_df.merge(scored, on="skuid", how="inner")
+    if catalog_with_metrics.empty:
+        logger.warning("No products survived catalog merge — aborting pipeline.")
+        return []
+
+    # ── 7. Cap & fill (dynamic category depth) ──
+    cat_levels   = _detect_category_levels(catalog_with_metrics)
+    final_df     = apply_caps_and_fill(catalog_with_metrics, weights)
+
+    if final_df.empty:
+        logger.warning("No products after cap/fill — aborting pipeline.")
+        return []
+
+    # ── 8. Build Meili docs ──
+    docs = build_meili_docs(final_df, cat_levels)
+    if not docs:
+        logger.error("build_meili_docs returned empty list — nothing to push.")
+        return []
+
+    push_to_meili(docs=docs, index_name=f"{client}_trending_products")
+    logger.info("Pipeline complete — pushed %d documents for client='%s'", len(docs), client)
+
+    return docs

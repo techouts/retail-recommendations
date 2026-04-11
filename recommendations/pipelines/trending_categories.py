@@ -114,7 +114,7 @@ def run_category_trending_pipeline(TrendingWeights: dict, client: str):
     min_threshold_relaxed = weights.min_threshold_relaxed or 30
 
     # ------------------------------------------------------------------
-    # Step 5: Weighted metric per SKU
+    # Step 5: Weighted metric per skuid
     # ------------------------------------------------------------------
     for metric in ["sales", "views", "cart", "wish"]:
         merged[f"weighted_{metric}"] = 0.0

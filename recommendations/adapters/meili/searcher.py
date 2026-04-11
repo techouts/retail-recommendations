@@ -8,10 +8,6 @@ def search_meili(
     limit: int = 20,
     offset: int = 0
 ):
-    """
-    Search documents from meili
-    """
-
     index = client.index(index_name)
 
     search_params = {
@@ -26,5 +22,5 @@ def search_meili(
 
     return {
         "hits": results.get("hits", []),
-        "nbHits": results.get("estimatedTotalHits", 0),
+        "nbHits": results.get("totalHits") or results.get("estimatedTotalHits", 0),
     }

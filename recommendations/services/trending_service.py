@@ -21,9 +21,17 @@ class TrendingService:
             raise PipelineException(f"Trending training failed: {str(e)}")
     
 
-    def getTrendingProducts(self,client:str):
+    def getTrendingProducts(self,client:str,filters: dict ={}, limit: int=20, page: int=0):
+
         try:
-            response=search_meili(f"{client}_trending_products")
+            filter_parts=[f'{k}={v}' for k,v in filters.items()]
+            filter_str = " AND ".join(filter_parts) if filter_parts else None
+            offset = (page - 1) * limit
+            response=search_meili(f"{client}_trending_products",
+                                  filters=filter_str,
+                                  limit=limit,
+                                  offset=offset)
+
             return {
                 "count": len(response),
                 "data":response
@@ -34,24 +42,3 @@ class TrendingService:
 
 
 
-
-
-class BestSellerService:
-
-    def trainBestSellerProducts(self, weights: dict, time_window: dict, client: str):
-
-        print("Best Seller Service Started")
-
-        result_df = run_bestseller_pipeline(weights, time_window,client)
-
-        print(" Pipeline Completed")
-
-
-
-
-        return {
-            "message": "Best Sellers training complete",
-            "count": len(result_df),
-            "client": client,
-            "data": result_df.to_dict(orient="records")
-        }

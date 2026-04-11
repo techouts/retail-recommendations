@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from ..utils.pipeline_utils import load_csv, normalize
 from ..adapters.meili.indexer import push_to_meili
 from types import SimpleNamespace
-
+from ..adapters.es.indexer import push_to_es
 
 def ensure_datetime(df: pd.DataFrame, col: str):
     if col in df.columns:
@@ -241,7 +241,11 @@ def run_category_trending_pipeline(TrendingWeights: dict, client: str):
 
     # Single index, no primary key
     index_name = f"{client}_trending_category_products"
-    push_to_meili(docs=docs, index_name=index_name)
+    push_to_es(
+        INDEX_PREFIX=f"{client}_trending_category_products",
+        ALIAS_NAME=f"{client}_trending_category_products",
+        docs=docs
+    )   
     print(f"[INFO] Pushed {len(docs)} total docs → index '{index_name}'")
 
     # Summary per L2 for the response

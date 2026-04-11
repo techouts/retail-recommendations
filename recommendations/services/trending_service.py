@@ -3,7 +3,7 @@ from ..pipelines.trending_pipeline import run_trending_pipeline
 from ..pipelines.trending_categories import run_category_trending_pipeline
 from ..adapters.meili.searcher import search_meili
 from ..pipelines.best_seller_pipeline import run_bestseller_pipeline
-
+from recommendations.adapters.es.searcher import search_es
 
 class TrendingService:
 
@@ -21,37 +21,58 @@ class TrendingService:
             raise PipelineException(f"Trending training failed: {str(e)}")
     
 
-    def getTrendingProducts(self,client:str):
+    # def getTrendingProducts(self,client:str):
+    #     try:
+    #         response=search_es(f"{client}_trending_products")
+    #         return {
+    #             "count": len(response),
+    #             "data":response
+    #         }
+    #     except Exception as e:
+    #         raise PipelineException(f"fetching trending products failed {str(e)}")
+    
+    def getTrendingProducts(self, client: str, filters=None, limit=20):
         try:
-            response=search_meili(f"{client}_trending_products")
+            alias_name = f"{client}_trending_products"
+
+            # 👉 If no filters
+            if not filters:
+                result = search_es(
+                    alias_name,
+                    limit=limit,
+                    offset=0
+                )
+            else:
+                must = []
+                for field, value in filters.items():
+                    must.append({
+                        "match": {
+                            field: {
+                                "query": value,
+                                "operator": "and"
+                            }
+                        }
+                    })
+
+                query = {
+                    "query": {
+                        "bool": {
+                            "must": must
+                        }
+                    }
+                }
+
+                result = search_es(
+                    alias_name,
+                    query=query,
+                    limit=limit,
+                    offset=0
+                )
+
             return {
-                "count": len(response),
-                "data":response
+                "count": result["nbHits"],
+                "data": result["hits"]
             }
+
         except Exception as e:
-            raise PipelineException(f"fetching trending products failed {str(e)}")
-        
-
-
-
-
-
-class BestSellerService:
-
-    def trainBestSellerProducts(self, weights: dict, time_window: dict, client: str):
-
-        print("Best Seller Service Started")
-
-        result_df = run_bestseller_pipeline(weights, time_window,client)
-
-        print(" Pipeline Completed")
-
-
-
-
-        return {
-            "message": "Best Sellers training complete",
-            "count": len(result_df),
-            "client": client,
-            "data": result_df.to_dict(orient="records")
-        }
+            raise Exception(f"fetching trending products failed {str(e)}")

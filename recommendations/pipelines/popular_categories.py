@@ -10,7 +10,7 @@ from typing import Optional
 from ..utils.pipeline_utils import load_csv, normalize
 from ..adapters.meili.indexer import push_to_meili
 from ..adapters.meili.client import client as meili_client
-
+from ..adapters.es.indexer import push_to_es
 
 router = APIRouter()
 
@@ -235,11 +235,13 @@ def run_popular_categories_pipeline(PopularCategoryWeights: dict, client: str):
 
     print(f"[INFO] Pushing {len(docs)} popular category docs...")
 
-    push_to_meili(
-        docs=docs,
-        index_name=f"{client}_popular_categories",
-        primary_key="id",
-    )
+  
+    push_to_es(
+        INDEX_PREFIX=f"{client}_popular_categories",
+        ALIAS_NAME=f"{client}_popular_categories",
+        docs=docs
+    )   
+    
 
     return final_categories.to_dict(orient="records")
 

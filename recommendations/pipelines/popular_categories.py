@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -7,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
 
-from ..utils.pipeline_utils import load_csv, normalize
+from ..utils.pipeline_utils import load_csv_from_s3, normalize
 from ..adapters.meili.indexer import push_to_meili
 from ..adapters.meili.client import client as meili_client
 from ..adapters.es.indexer import push_to_es
@@ -60,13 +61,15 @@ def run_popular_categories_pipeline(PopularCategoryWeights: dict, client: str):
     top_k   = getattr(weights, "top_k_per_l2",     5)
     min_sku = getattr(weights, "min_sku_threshold", 2)
 
+    s3_path = os.getenv("S3_PATH", "s3://retail-search")
+
     # ------------------------------------------------------------------
     # Load
     # ------------------------------------------------------------------
-    catalog_df     = load_csv("catalog.csv")
-    analytics_df   = load_csv("analytics.csv")
-    fulfillment_df = load_csv("fulfillment.csv")
-    inventory_df   = load_csv("inventory.csv")
+    catalog_df     = load_csv_from_s3(s3_path, client, "catalog")
+    analytics_df   = load_csv_from_s3(s3_path, client, "analytics")
+    fulfillment_df = load_csv_from_s3(s3_path, client, "fulfillment")
+    inventory_df   = load_csv_from_s3(s3_path, client, "inventory")
   
   
     for df in [catalog_df, analytics_df, fulfillment_df, inventory_df]:

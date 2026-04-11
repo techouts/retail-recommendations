@@ -1,16 +1,4 @@
-"""
-trending_pipeline.py
---------------------
-Fully rewritten trending pipeline with:
-  - Dynamic category levels (L1 → L4, or however many exist)
-  - All bug fixes from review (merged.get, `or` fallback, dead code, logging)
-  - Clean separation of concerns — each step is its own function
-  - Pydantic-validated weights
-  - Structured logging throughout
-"""
-
 from __future__ import annotations
-
 import logging
 import math
 from datetime import datetime, timedelta
@@ -20,8 +8,8 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
 from types import SimpleNamespace
-
-from ..utils.pipeline_utils import load_csv, normalize
+from ..schemas.pipeline_schema import TrendingWeightsModel
+from ..utils.pipeline_utils import load_csv_from_s3, normalize
 # from ..adapters.meili.indexer import push_to_meili
 from ..adapters.es.indexer import push_to_es
 
@@ -29,46 +17,9 @@ from ..adapters.es.indexer import push_to_es
 logger = logging.getLogger(__name__)
 
 
-# ─────────────────────────────────────────────
-# 1. Validated weights model (replaces SimpleNamespace + `or` hacks)
-# ─────────────────────────────────────────────
-
-class TrendingWeightsModel(BaseModel):
-    # Internal time-decay weights for each signal
-    internal_sales_24h: float = 40.0
-    internal_sales_3d:  float = 30.0
-    internal_sales_7d:  float = 30.0
-
-    internal_views_24h: float = 40.0
-    internal_views_3d:  float = 40.0
-    internal_views_7d:  float = 20.0
-
-    internal_cart_24h:  float = 40.0
-    internal_cart_3d:   float = 30.0
-    internal_cart_7d:   float = 30.0
-
-    internal_wish_24h:  float = 40.0
-    internal_wish_3d:   float = 30.0
-    internal_wish_7d:   float = 30.0
-
-    # Business-level signal weights (must sum to ~1.0)
-    business_sales_weight: float = 0.5
-    business_views_weight: float = 0.1
-    business_cart_weight:  float = 0.3
-    business_wish_weight:  float = 0.1
-
-    # Thresholds
-    threshold_value:       float = 64.0
-    min_threshold_relaxed: float = 30.0
-
-    # Category caps
-    max_per_leaf_category: int   = 10   # cap per deepest (leaf) level
-    min_per_l2_category:   int   = 10   # minimum fill target for L2
 
 
-# ─────────────────────────────────────────────
-# 2. deep_clean — safe for all types
-# ─────────────────────────────────────────────
+
 
 def deep_clean(obj: Any) -> Any:
     """
@@ -129,12 +80,13 @@ def _normalise_df(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def load_and_normalise() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def load_and_normalise(client: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Load all source CSVs and normalise column names/types."""
-    catalog_df     = _normalise_df(load_csv("catalog.csv"))
-    analytics_df   = _normalise_df(load_csv("analytics.csv"))
-    fulfillment_df = _normalise_df(load_csv("fulfillment.csv"))
-    inventory_df   = _normalise_df(load_csv("inventory.csv"))
+    s3_path = os.getenv("S3_PATH", "s3://retail-search")
+    catalog_df     = _normalise_df(load_csv_from_s3(s3_path, client, "catalog"))
+    analytics_df   = _normalise_df(load_csv_from_s3(s3_path, client, "analytics"))
+    fulfillment_df = _normalise_df(load_csv_from_s3(s3_path, client, "fulfillment"))
+    inventory_df   = _normalise_df(load_csv_from_s3(s3_path, client, "inventory"))
 
     logger.info(
         "Loaded rows — catalog=%d analytics=%d fulfillment=%d inventory=%d",
@@ -461,7 +413,7 @@ def run_trending_pipeline(trending_weights: dict, client: str) -> list[dict]:
     logger.info("Pipeline started for client='%s' threshold=%.1f", client, weights.threshold_value)
 
     # ── 2. Load ──
-    catalog_df, analytics_df, fulfillment_df, inventory_df = load_and_normalise()
+    catalog_df, analytics_df, fulfillment_df, inventory_df = load_and_normalise(client)
 
     # ── 3. Eligible products ──
     eligible_skuids = get_eligible_skuids(inventory_df)

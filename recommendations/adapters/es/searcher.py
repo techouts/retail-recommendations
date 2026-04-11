@@ -1,6 +1,7 @@
-from elasticsearch import Elasticsearch
 from ..es.client import get_es_client
-import traceback
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def search_es(
@@ -11,15 +12,13 @@ def search_es(
     offset: int = 0
 ):
     es = get_es_client()
-    print("es",es)
 
     try:
+        if not ALIAS_NAME:
+            raise ValueError("ALIAS_NAME is required for Elasticsearch search")
+
         if not es.indices.exists_alias(name=ALIAS_NAME):
-            print(f"Alias '{ALIAS_NAME}' does not exist.")
-            return {
-                "hits": [],
-                "nbHits": 0
-            }
+            raise ValueError(f"Alias '{ALIAS_NAME}' does not exist.")
 
         # Base query
         body = query if query else {"query": {"match_all": {}}}
@@ -50,9 +49,5 @@ def search_es(
         }
 
     except Exception as e:
-        print(f"Error: {e}")
-        traceback.print_exc()
-        return {
-            "hits": [],
-            "nbHits": 0
-        }
+        logger.exception("Elasticsearch search failed for alias '%s'", ALIAS_NAME)
+        raise RuntimeError(f"Elasticsearch search failed for alias '{ALIAS_NAME}': {e}") from e

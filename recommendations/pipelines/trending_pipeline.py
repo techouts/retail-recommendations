@@ -12,7 +12,7 @@ from ..schemas.pipeline_schema import TrendingWeightsModel
 from ..utils.pipeline_utils import load_csv_from_s3, normalize
 # from ..adapters.meili.indexer import push_to_meili
 from ..adapters.es.indexer import push_to_es
-
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +185,10 @@ _SIGNAL_PERIODS = {
     "sales": ["24h", "3d", "7d"],
     "views": ["24h", "3d", "7d"],
     "cart":  ["24h", "3d", "7d"],
+
+
+
+    
     "wish":  ["24h", "3d", "7d"],
 }
 

@@ -11,7 +11,7 @@ bestSellerService = PopularCategoryService()
 @router.post("/train")
 def train_popular_category(payload: dict):
 
-    client = payload.get("Client")
+    client = payload.get("client")
     settings = payload.get("settings", {})
 
     if not client:

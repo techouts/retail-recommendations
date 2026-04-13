@@ -13,7 +13,7 @@ bestSellerService = BestSellerService()
 @router.post("/train")
 def train_best_seller(payload: dict):
 
-    client = payload.get("Client")
+    client = payload.get("client")
     settings = payload.get("settings", {})
     time_window = payload.get("time_window", {})
 

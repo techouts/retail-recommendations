@@ -366,7 +366,12 @@ def apply_caps_and_fill(
 
 _MEILI_BASE_COLS = [
     "skuid", "display_title", "brand", "selling_price",
-    "trending_score", "is_trending", "is_threshold_relaxed", "image_urls",
+    "trending_score", "is_trending", "is_threshold_relaxed", "image_urls","internal_sales_24h", "internal_sales_3d", "internal_sales_7d",
+    "internal_views_24h", "internal_views_3d", "internal_views_7d",
+    "internal_cart_24h", "internal_cart_3d", "internal_cart_7d",
+    "internal_wish_24h", "internal_wish_3d", "internal_wish_7d",
+    "business_sales_weight", "business_views_weight",
+    "business_cart_weight", "business_wish_weight"
 ]
 
 def build_meili_docs(
@@ -431,6 +436,9 @@ def run_trending_pipeline(trending_weights: dict, client: str) -> list[dict]:
 
     # ── 5. Score ──
     scored = score_products(merged, weights)
+    
+    for key, value in trending_weights.items():
+        scored[key] = value
 
     # ── 6. Merge with catalog ──
     catalog_with_metrics = catalog_df.merge(scored, on="skuid", how="inner")

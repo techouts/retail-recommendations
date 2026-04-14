@@ -52,14 +52,14 @@ def run_popular_categories_pipeline(PopularCategoryWeights: dict, client: str):
 
     weights = SimpleNamespace(**PopularCategoryWeights)
 
-    score_w = getattr(weights, "score_weight", 0.5)
+    score_w = getattr(weights, "score_weight", 0.45)
     avg_w   = getattr(weights, "avg_weight",   0.2)
     sku_w   = getattr(weights, "sku_weight",   0.1)
-    sales_w = getattr(weights, "sales_weight", 0.15)
+    sales_w = getattr(weights, "sales_weight", 0.2)
     views_w = getattr(weights, "views_weight", 0.05)
 
     top_k   = getattr(weights, "top_k_per_l2",     5)
-    min_sku = getattr(weights, "min_sku_threshold", 2)
+    min_sku = getattr(weights, "min_sku_threshold", 5)
 
     s3_path = os.getenv("S3_PATH", "s3://retail-search")
 
@@ -172,7 +172,7 @@ def run_popular_categories_pipeline(PopularCategoryWeights: dict, client: str):
         total_sales =("weighted_sales", "sum"),
         total_views =("weighted_views", "sum"),
     ).reset_index()
-
+    
     category_df = category_df[category_df["sku_count"] >= min_sku]
 
     if category_df.empty:

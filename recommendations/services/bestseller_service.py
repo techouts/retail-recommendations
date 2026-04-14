@@ -7,9 +7,6 @@ from recommendations.adapters.es.searcher import search_es
 
 class BestSellerService:
     ALIAS="best_sellers"
-    # -----------------------------
-    # TRAIN BEST SELLERS
-    # -----------------------------
     def train_best_sellers(self, weights: dict, time_window: dict, client: str):
         if not client:
             raise ValueError("client is required")
@@ -22,7 +19,7 @@ class BestSellerService:
                 "message": "Best Sellers training complete",
                 "count": len(result_df),
                 "client": client,
-                "data": result_df.to_dict(orient="records")
+                "data": result_df   
             }
 
         except Exception as e:

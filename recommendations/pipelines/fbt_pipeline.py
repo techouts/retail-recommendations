@@ -24,8 +24,8 @@ def product_pairs(grouped_orders):
 
 def calculate_support(ordersdf, pairdf):
     
-    total_orders = ordersdf["order_id"].nunique()
-    pairdf["Support"] = pairdf["OrderCount"] / total_orders
+    total_orderss= ordersdf["order_id"].nunique()
+    pairdf["Support"] = pairdf["OrderCount"] / total_orderss
     return pairdf
 
 def calculate_confidence(ordersdf, pairdf):
@@ -39,8 +39,8 @@ def calculate_confidence(ordersdf, pairdf):
     return pd.DataFrame(confidences, columns=["Pair", "Confidence(A→B)", "Confidence(B→A)"])
 
 def calculate_lift(ordersdf, conf_df):
-    total_orders = ordersdf["order_id"].nunique()
-    product_support = ordersdf.groupby("sku_id")["order_id"].nunique() / total_orders
+    total_orderss= ordersdf["order_id"].nunique()
+    product_support = ordersdf.groupby("sku_id")["order_id"].nunique() / total_orderss
     lifts_A_to_B, lifts_B_to_A = [], []
     for _, row in conf_df.iterrows():
         A, B = row["Pair"]
@@ -178,15 +178,20 @@ def run_fbt_pipeline(fbt_weights : dict , client : str):
 
     # Load CSVs from S3 by client
     catalog = load_csv_from_s3(s3_path, client, "catalog")
-    orders = load_csv_from_s3(s3_path, client, "orders")
+    orderss= load_csv_from_s3(s3_path, client, "orders")
     inventory = load_csv_from_s3(s3_path, client, "inventory")
     
     inventorydf = inventory[inventory["stock_quantity"] >= 1]
     catalogdf = catalog[catalog["sku_id"].isin(inventorydf["sku_id"])]
-    ordersdf = orders[orders["sku_id"].isin(inventorydf["sku_id"])]
+    orderssdf = orderss[orderss["sku_id"].isin(inventorydf["sku_id"])]
+    print("Total orders:", orderssdf["order_id"].nunique())
+    print("Order items distribution:")
+    print(orderssdf.groupby("order_id")["sku_id"].count().value_counts())
     
-    pairsdf = product_pairs(ordersdf.groupby("order_id")["sku_id"].apply(list))
-    supportdf = calculate_support(ordersdf, pairsdf)
+    pairsdf = product_pairs(orderssdf.groupby("order_id")["sku_id"].apply(list))
+    print("Pairs generated:", len(pairsdf))
+    print(pairsdf.head())
+    supportdf = calculate_support(orderssdf, pairsdf)
     # supportdf.to_csv("supportdf_debug.csv", index=False)
     
     # supportdf = supportdf[supportdf["OrderCount"] >= FREQ_THRESHOLD]
@@ -195,7 +200,7 @@ def run_fbt_pipeline(fbt_weights : dict , client : str):
     if supportdf.empty:
         print("⚠️ No FBT pairs found")
         return pd.DataFrame()
-    conf_df = calculate_confidence(ordersdf, supportdf)
+    conf_df = calculate_confidence(orderssdf, supportdf)
     
     # print("Confidence df : ",conf_df)
     
@@ -203,17 +208,18 @@ def run_fbt_pipeline(fbt_weights : dict , client : str):
         (conf_df["Confidence(A→B)"] >= CONFIDENCE_MIN)
         | (conf_df["Confidence(B→A)"] >= CONFIDENCE_MIN)
     ]
+    print("After confidence:", len(conf_df))
     # print("Pairs after confidence threshold:", len(conf_df))
     if conf_df.empty:
         # print("⚠️ No FBT pairs after confidence filter")
         return pd.DataFrame()
     
-    liftdf = calculate_lift(ordersdf, conf_df)
+    liftdf = calculate_lift(orderssdf, conf_df)
     liftdf = liftdf[
         (liftdf["Lift(A→B)"] >= LIFT_MIN)
         | (liftdf["Lift(B→A)"] >= LIFT_MIN)
     ]
-    
+    print("After lift:", len(liftdf))
     # print("Lift df : ",liftdf)
     
     # print("Pairs after lift threshold:", len(liftdf))
@@ -228,8 +234,9 @@ def run_fbt_pipeline(fbt_weights : dict , client : str):
     # print("Final df : ",finaldf.head(10))
     
     merged = merge_fbt_with_catalog(finaldf, catalogdf, price_tolerance=PRICE_TOLERANCE)
+    print("After merge:", len(merged))
     
-    # print("Merged : ",merged.head(10))
+    # print("Merged : ",merged.head(10))order
     
     if merged.empty:
         print("⚠️ No FBT pairs survived catalog/price/l1 filter")

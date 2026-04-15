@@ -7,6 +7,17 @@ from ..adapters.meili.indexer import push_to_meili
 from types import SimpleNamespace
 from ..adapters.es.indexer import push_to_es
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+)
+
+
+
 def df_to_es_docs(df: pd.DataFrame) -> list[dict]:
     
     df = df.replace([np.nan, np.inf, -np.inf], None)
@@ -19,7 +30,7 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
         
     dod_weights = SimpleNamespace(**DealOfDayWeights)
     
-    print("Dod weights : ",dod_weights)
+    logger.info(f"Dod weights: {dod_weights}")
     
     s3_path = os.getenv("S3_PATH", "s3://retail-search")
 
@@ -29,6 +40,10 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
     analytics = load_csv_from_s3(s3_path, client, "analytics")
     customer_rating = load_csv_from_s3(s3_path, client, "customer_rating")
     pmr = load_csv_from_s3(s3_path, client, "pmr")
+    logger.info(f"Catalog rows: {len(catalog)}")
+    logger.info(f"Inventory rows: {len(inventory)}")
+    logger.info(f"Analytics rows: {len(analytics)}")
+    logger.info(f"Ratings rows: {len(customer_rating)}")
 
     catalog["created_at"] = pd.to_datetime(catalog["created_at"], errors="coerce")
     pmr["discount_enddate"] = pd.to_datetime(pmr["discount_enddate"], errors="coerce")
@@ -43,8 +58,8 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
         (pmr["discount_enddate"].dt.date >= dt.today().date()) &
         (pmr["discount_price"].between(dod_weights.min_discount_threshold, dod_weights.max_discount_threshold))
     ].copy()
-    print("Today date : ",dt.today().date())
-    print("pmrdf: ",pmrdf.head(100))
+    logger.info(f"Today date: {dt.today().date()}")
+    logger.debug(f"pmrdf:\n{pmrdf.head(100).to_string()}")
     
     # Filter catalog by L3 and PMR SKUs
     catalogdf = catalog[
@@ -52,34 +67,36 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
     ].copy()
     catalogdf["is_new"] = (dt.today() - catalogdf["created_at"]).dt.days <= dod_weights.new_product_window_days
 
-    print("catalog df : ",catalogdf.head(10))
+    logger.debug(f"catalog df:\n{catalogdf.head(10).to_string()}")
+
     
     # Inventory filter
     inventorydf = inventory[inventory["sku_id"].isin(catalogdf["sku_id"])].copy()
     
-    print("Inventory df 1 : ",inventorydf.head(10))
+    logger.debug(f"Inventory df 1:\n{inventorydf.head(10).to_string()}")
     
     inventorydf = inventorydf.groupby("sku_id").agg(total_quantity=("stock_quantity", "sum")).reset_index()
     
-    print("Inventory df 2: ",inventorydf.head(10))
-    
+    logger.debug(f"Inventory df 2:\n{inventorydf.head(10).to_string()}")
+
     inventorydf = inventorydf[inventorydf["total_quantity"] >= dod_weights.min_stock]
     
-    print("Inventory df 3 : ",inventorydf.head(10))
+    logger.debug(f"Inventory df 3:\n{inventorydf.head(10).to_string()}")
 
     # Analytics aggregation
     analyticsdf = analytics[analytics["sku_id"].isin(inventorydf["sku_id"])].copy()
     
-    print("Analytics 1 : ",analyticsdf.head(10))
+    logger.debug(f"Analytics 1:\n{analyticsdf.head(10).to_string()}")
+
     
     analyticsdf = analyticsdf.groupby("sku_id")[["addtocart_count", "view_count"]].sum().reset_index()
     
-    print("Analytics 2 : ",analyticsdf.head(10))
+    logger.debug(f"Analytics 2:\n{analyticsdf.head(10).to_string()}")
 
     # Ratings aggregation
     ratingdf = customer_rating[customer_rating["sku_id"].isin(inventorydf["sku_id"])].copy()
     
-    print("Ratings df : ",ratingdf.head(10))
+    logger.debug(f"Ratings df:\n{ratingdf.head(10).to_string()}")
     
     ratingdf = ratingdf.groupby("sku_id").agg(
         review_count=("sku_id", "count"),
@@ -102,22 +119,21 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
     resultdf["avg_rating"] = resultdf["avg_rating"].fillna(0)
 
     
-    print("Resultdf : ",resultdf.head(10))
+    logger.debug(f"Resultdf:\n{resultdf.head(10).to_string()}")
     
     
     # Adaptive review filtering
     filtered = resultdf[resultdf["review_count"] >= dod_weights.min_reviews].copy()
     
-    print("filtered df 1 : ",filtered.head(25))
-    
-    print("sum : ",filtered["category_l3"].isna().sum())
+    logger.debug(f"filtered df:\n{filtered.head(25).to_string()}")
+    logger.info(f"Null category count: {filtered['category_l3'].isna().sum()}")
     
     count_after_filter = filtered.groupby("category_l3").agg(
         count=("sku_id", "count"),
         skuid=("sku_id", lambda x: list(x))
     ).reset_index()
     
-    print("Filtered results 2 : ",count_after_filter)
+    logger.info(f"Filtered results:\n{count_after_filter}")
     
     # Debug log: track relaxed review logic per L3
     final_df_list = []
@@ -139,7 +155,7 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
     # Print debug summary
     # print("🔍 Review Relaxation Summary:")
     for entry in relaxed_review_log:
-        print(f"  - L3: {entry['l3']} | Relaxed: {entry['relaxed_review']} | Qualified SKUs: {entry['qualified_skus']}")
+       logger.info(f"L3: {entry['l3']} | Relaxed: {entry['relaxed_review']} | Qualified SKUs: {entry['qualified_skus']}")
 
     # Normalize and score
     if not final_df.empty:
@@ -157,7 +173,7 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
 
         final_df = final_df[final_df["score"] >= dod_weights.final_score_threshold].copy()
     
-    print("Final df : ",final_df.head(10))
+    logger.debug(f"Final df:\n{final_df.head(10).to_string()}")
 
     # L3 capped selection
     final_list = []
@@ -178,9 +194,9 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
 
     final_df = pd.concat(final_list, ignore_index=True) if final_list else pd.DataFrame()
     
-    print("Final df columns : ",final_df.columns)
+    logger.info(f"Final df columns: {list(final_df.columns)}")
     
-    print("Final df : ",final_df)
+    logger.debug(f"Final df full:\n{final_df.to_string()}")
     
     for col in final_df.select_dtypes(include=["datetime64[ns]"]).columns:
         final_df[col] = final_df[col].astype(str)
@@ -194,6 +210,7 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
     #         "avg_rating", "relaxed_review", "score"
     #     ]].copy()
     
+    
     final_df = final_df.rename(columns={
         "sku_id": "sku",
         "product_name": "title",
@@ -204,16 +221,17 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
         "addtocart_count": "addtocart",
         "view_count": "views",
         "stock_status": "availability"
-        })
-    
+    })
+
+
     es_df = final_df[[
-           'sku', 'title', 'l1', 'l2', 'l3', 'brand',  'availability',
-       'is_new', 'name', 'price', 'pmr_price', 'pmr_discount',
-       'discount_enddate', 'total_quantity', 'addtocart', 'views',
-       'review_count', 'avg_rating', 'relaxed_review', 'normalized_views',
-       'normalized_addtocart', 'normalized_rating', 'normalized_reviews',
-       'score'
-        ]].copy()
+        'sku', 'title', 'l1', 'l2', 'l3', 'brand', 'availability',
+        'is_new', 'name', 'price', 'pmr_price', 'pmr_discount',
+        'discount_enddate', 'total_quantity', 'addtocart', 'views',
+        'review_count', 'avg_rating', 'relaxed_review',
+        'normalized_views', 'normalized_addtocart',
+        'normalized_rating', 'normalized_reviews', 'score'
+    ]].copy()
     
     
     docs = df_to_es_docs(es_df)
@@ -238,7 +256,7 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
     if not final_df.empty:
         docs = df_to_es_docs(es_df)
         push_to_es(docs=docs, ALIAS_NAME="dod_recommendations", INDEX_PREFIX="deal_of_the_day")
-        print("✅ Final selection pushed to ES (L3 capped, L2 fallback applied).")
+        logger.info("Final selection pushed to ES")
     else:
-        print("⚠️ No final products to push to ES.")
+        logger.warning("No final products to push to ES")
     return {"data": docs}

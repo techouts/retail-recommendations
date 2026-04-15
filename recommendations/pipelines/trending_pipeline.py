@@ -468,3 +468,5 @@ def run_trending_pipeline(trending_weights: dict, client: str) -> list[dict]:
     logger.info("Pipeline complete — pushed %d documents for client='%s'", len(docs), client)
 
     return docs
+
+

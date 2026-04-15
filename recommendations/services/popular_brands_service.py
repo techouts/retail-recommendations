@@ -13,6 +13,7 @@ class PopularBrandsService:
             data = run_popular_brands(popular_brands_settings,client)
             return {
                 "success": True,
+                "count": len(data),
                 "data":data
             }
         except PipelineException as e:

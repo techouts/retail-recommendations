@@ -1,11 +1,19 @@
 
-
 import os
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 from ..adapters.es.indexer import push_to_es
 from ..utils.pipeline_utils import load_csv_from_s3, normalize
+import logging
+logger = logging.getLogger(__name__)
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+)
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_DIR = os.path.join(BASE_DIR, "data", "processed")
@@ -15,7 +23,7 @@ CSV_DIR = os.path.join(BASE_DIR, "data", "processed")
 
 def parse_datetime(df, col):
     if col not in df.columns:
-        print(f" {col} missing → default added")
+        logger.info(f" {col} missing → default added")
         df[col] = pd.Timestamp.now()
     df[col] = pd.to_datetime(df[col], errors="coerce", format="mixed")
 
@@ -35,7 +43,7 @@ def df_to_docs(df):
 
 def run_bestseller_pipeline(settings: dict, time_window: dict, client: str):
 
-    print("\n================ BEST SELLER PIPELINE STARTED ================\n")
+    logger.info("\n================ BEST SELLER PIPELINE STARTED ================\n")
 
     # -------------------- WEIGHTS --------------------
     weights = {
@@ -45,7 +53,7 @@ def run_bestseller_pipeline(settings: dict, time_window: dict, client: str):
         "return": settings.get("return_rate_score", 0.10),
         "rating": settings.get("customer_rating_score", 0.10),
     }
-    print("Weights:", weights)
+    logger.info(f"Weights: {weights}")
 
     # -------------------- THRESHOLDS --------------------
     sales_t = settings.get("sales_threshold", 0)
@@ -55,14 +63,14 @@ def run_bestseller_pipeline(settings: dict, time_window: dict, client: str):
     rating_t = settings.get("customer_rating_threshold", 0)
     final_t = settings.get("final_score_threshold", 0)
 
-    print("Thresholds:", {
-        "sales": sales_t,
-        "revenue": revenue_t,
-        "stock": stock_t,
-        "return": return_t,
-        "rating": rating_t,
-        "final": final_t
-    })
+    logger.info(f"Thresholds: { { 
+     'sales': sales_t,
+     'revenue': revenue_t,
+     'stock': stock_t,
+     'return': return_t,
+     'rating': rating_t,
+     'final': final_t
+ } }")
 
     # -------------------- LOAD DATA --------------------
     s3_path = os.getenv("S3_PATH", "s3://retail-search")
@@ -74,7 +82,7 @@ def run_bestseller_pipeline(settings: dict, time_window: dict, client: str):
     inventory = load_csv_from_s3(s3_path,client,"inventory")
     returns = load_csv_from_s3(s3_path,client,"returns")
 
-    print(f"Loaded → Catalog:{len(catalog)} | Fulfillment:{len(fulfillment)}")
+    logger.info(f"Loaded → Catalog:{len(catalog)} | Fulfillment:{len(fulfillment)}")
 
     # -------------------- CLEAN --------------------
     for df in [catalog, fulfillment, orders, analytics_rating, inventory, returns]:
@@ -109,7 +117,7 @@ def run_bestseller_pipeline(settings: dict, time_window: dict, client: str):
     max_days = max(time_window.values()) if time_window else 30
     cutoff = datetime.now() - timedelta(days=max_days)
 
-    print("Using cutoff:", cutoff)
+    logger.info(f"Using cutoff: {cutoff}")
 
     # -------------------- FILTER --------------------
     f = fulfillment[fulfillment["created_at"] >= cutoff]
@@ -118,10 +126,10 @@ def run_bestseller_pipeline(settings: dict, time_window: dict, client: str):
     r = returns[returns["created_at"] >= cutoff]
     a = analytics_rating[analytics_rating["timestamp"] >= cutoff]
 
-    print("After time filter:", len(f))
+    logger.info(f"After time filter: {len(f)}")
 
     if f.empty:
-        print(" No data after time filter")
+        logger.info(" No data after time filter")
         return []
 
     # -------------------- AGGREGATION --------------------
@@ -136,17 +144,17 @@ def run_bestseller_pipeline(settings: dict, time_window: dict, client: str):
         if not df.empty:
             df = df.drop(columns=["seller_id"], errors="ignore")   
             perf = perf.merge(df, on="skuid", how="left")
-            print(f"Merged {name}: {len(perf)}")
+            logger.info(f"Merged {name}: {len(perf)}")
 
     perf = perf.fillna(0)
 
     #  IMPORTANT: bring category + brand only once
     perf = perf.merge(catalog[["skuid","category_l3","brand"]], on="skuid", how="left")
 
-    print("After merge:", len(perf))
+    logger.info(f"After merge: {len(perf)}")
 
-    print("After all merges:")
-    print(perf[["skuid","seller_id","revenue"]].head(10))
+    logger.info("After all merges:")
+    logger.info(perf[["skuid","seller_id","revenue"]].head(10))
 
     # -------------------- RETURN RATE --------------------
     perf["return_rate_pct"] = (perf["return_count"] / perf["sales_count"].replace(0, np.nan)) * 100
@@ -159,7 +167,7 @@ def run_bestseller_pipeline(settings: dict, time_window: dict, client: str):
     perf["norm_return"] = 1 - perf.groupby("category_l3")["return_rate_pct"].transform(normalize)
     perf["norm_rating"] = perf.groupby("category_l3")["avg_rating"].transform(normalize)
 
-    print("Normalization complete")
+    logger.info("Normalization complete")
 
     # -------------------- SCORE --------------------
     perf["sales_count"] = perf["norm_sales"] * weights["sales"] * 100
@@ -179,11 +187,11 @@ def run_bestseller_pipeline(settings: dict, time_window: dict, client: str):
     original_perf = perf.copy()
 
     # -------------------- THRESHOLD FILTER --------------------
-    print("Before filtering:", len(perf))
+    logger.info(f"Before filtering: {len(perf)}")
 
     def safe_filter(df, condition, name):
         temp = df[condition]
-        print(f"{name} filter → {len(temp)} rows")
+        logger.info(f"{name} filter → {len(temp)} rows")
         return temp if len(temp) > 20 else df
 
     if sales_t > 0:
@@ -203,17 +211,17 @@ def run_bestseller_pipeline(settings: dict, time_window: dict, client: str):
     if final_t > 0:
         perf = safe_filter(perf, perf["final_score"] >= final_t, "Final Score")
 
-    print("After filtering:", len(perf))
+    logger.info(f"After filtering: {len(perf)}")
 
     # -------------------- BRAND CAP --------------------
     perf["brand_rank"] = perf.groupby(["category_l3","brand"])["final_score"].rank(method="first", ascending=False)
     perf = perf[perf["brand_rank"] <= 3]
 
-    print("After brand cap:", len(perf))
+    logger.info(f"After brand cap: {len(perf)}")
 
     # -------------------- FALLBACK --------------------
     if perf.empty:
-        print(" fallback triggered")
+        logger.info(" fallback triggered")
         perf = original_perf.sort_values(by="final_score", ascending=False).head(50)
 
     # -------------------- FINAL OUTPUT --------------------sales_count_val
@@ -252,17 +260,17 @@ def run_bestseller_pipeline(settings: dict, time_window: dict, client: str):
 
     docs = df_to_docs(es_data)
 
-    print("Final docs:", len(docs))
+    logger.info(f"Final docs: {len(docs)}")
 
     # -------------------- PUSH --------------------
     if docs:
-        print(" pushing to ES...")
+        logger.info(" pushing to ES...")
         push_to_es(
             INDEX_PREFIX=f"{client}_best_sellers_retail",
             ALIAS_NAME=f"{client}_best_sellers_retail",
             docs=docs
         )
 
-    print("\n================ PIPELINE COMPLETED =================\n")
+    logger.info("\n================ PIPELINE COMPLETED =================\n")
 
     return docs

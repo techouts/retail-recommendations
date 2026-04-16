@@ -119,13 +119,11 @@ def load_csv_from_s3_advanced(
                 dataset=dataset,
                 filename=filename,
             )
-            print("playload",payload)
             # raw = payload["stream"].read()
             # try:
             #     df = pd.read_csv(io.BytesIO(raw))
             #     if "timestamp" in df.columns:
             #         df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-            #     print("df",df)
             # except Exception as e:
             #     print("error",str(e))
             # return df
@@ -135,14 +133,14 @@ def load_csv_from_s3_advanced(
                 # Try UTF-8 first
                 df = pd.read_csv(io.BytesIO(raw), encoding="utf-8")
             except UnicodeDecodeError:
-                print("⚠️ UTF-8 failed, trying latin-1...")
+                print(" UTF-8 failed, trying latin-1...")
                 df = pd.read_csv(io.BytesIO(raw), encoding="latin-1")
 
             # Process timestamp if exists
             if "timestamp" in df.columns:
                 df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
 
-            print("✅ Loaded DF shape:", df.shape)
+            print(" Loaded DF shape:", df.shape)
 
             return df
 

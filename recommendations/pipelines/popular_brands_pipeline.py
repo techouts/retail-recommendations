@@ -119,7 +119,7 @@ def run_popular_brands(popular_brands_weights : dict , client : str):
         docs.append(doc)
         
         
-    #   --- meili search ---    
+    # #   --- meili search ---    
     # push_to_meili_popular_brands(
     #         docs=docs,
     #         index_name=f"{client}_popular_brands"
@@ -129,7 +129,7 @@ def run_popular_brands(popular_brands_weights : dict , client : str):
     # --- es ---    
     if not df.empty:
         docs = df_to_es_docs(df)
-        push_to_es(docs=docs, ALIAS_NAME="popular_brands", INDEX_PREFIX="popular-brands")
+        push_to_es(docs=docs, ALIAS_NAME=f"{client}_popular_brands", INDEX_PREFIX=f"{client}_popular-brands")
 
     return docs
         

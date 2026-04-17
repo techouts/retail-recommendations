@@ -442,6 +442,7 @@ def run_trending_pipeline(trending_weights: dict, client: str) -> list[dict]:
 
     # ── 6. Merge with catalog ──
     catalog_with_metrics = catalog_df.merge(scored, on="skuid", how="inner")
+    catalog_with_metrics["display_title"] = catalog_with_metrics["product_name"]
     if catalog_with_metrics.empty:
         logger.warning("No products survived catalog merge — aborting pipeline.")
         return []

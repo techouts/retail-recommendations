@@ -5,6 +5,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from ..adapters.es.indexer import push_to_es
 from ..utils.pipeline_utils import load_csv_from_s3, normalize
+from .utils import normalize_df
 import logging
 logger = logging.getLogger(__name__)
 import logging
@@ -75,14 +76,15 @@ def run_bestseller_pipeline(settings: dict, time_window: dict, client: str):
     # -------------------- LOAD DATA --------------------
     s3_path = os.getenv("S3_PATH", "s3://retail-search")
 
-    catalog =load_csv_from_s3(s3_path, client, "catalog")
-    fulfillment = load_csv_from_s3(s3_path,client,"fulfillment")
-    orders = load_csv_from_s3(s3_path,client, "orders")
-    analytics_rating = load_csv_from_s3(s3_path,client,"analytics_rating")
-    inventory = load_csv_from_s3(s3_path,client,"inventory")
-    returns = load_csv_from_s3(s3_path,client,"returns")
+    catalog          = normalize_df(load_csv_from_s3(s3_path, client, "catalog"))
+    fulfillment      = normalize_df(load_csv_from_s3(s3_path,client,"fulfillment"))
+    orders           = normalize_df(load_csv_from_s3(s3_path,client, "orders"))
+    analytics_rating = normalize_df(load_csv_from_s3(s3_path,client,"analytics_rating"))
+    inventory        = normalize_df(load_csv_from_s3(s3_path,client,"inventory"))
+    returns          = normalize_df(load_csv_from_s3(s3_path,client,"returns"))
 
     logger.info(f"Loaded → Catalog:{len(catalog)} | Fulfillment:{len(fulfillment)}")
+
 
     # -------------------- CLEAN --------------------
     for df in [catalog, fulfillment, orders, analytics_rating, inventory, returns]:

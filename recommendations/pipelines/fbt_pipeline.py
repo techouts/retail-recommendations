@@ -8,7 +8,10 @@ from types import SimpleNamespace
 from itertools import combinations
 from collections import Counter
 from .utils import df_to_es_docs
+from .utils import normalize_df
 from ..adapters.es.indexer import push_to_es
+import logging
+logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_DIR = os.path.join(BASE_DIR)
@@ -29,7 +32,7 @@ def calculate_support(ordersdf, pairdf):
     return pairdf
 
 def calculate_confidence(ordersdf, pairdf):
-    order_count_per_product = ordersdf.groupby("sku_id")["order_id"].nunique().to_dict()
+    order_count_per_product = ordersdf.groupby("skuid")["order_id"].nunique().to_dict()
     confidences = []
     for pair, order_count in zip(pairdf["Pair"], pairdf["OrderCount"]):
         A, B = pair
@@ -40,7 +43,7 @@ def calculate_confidence(ordersdf, pairdf):
 
 def calculate_lift(ordersdf, conf_df):
     total_orderss= ordersdf["order_id"].nunique()
-    product_support = ordersdf.groupby("sku_id")["order_id"].nunique() / total_orderss
+    product_support = ordersdf.groupby("skuid")["order_id"].nunique() / total_orderss
     lifts_A_to_B, lifts_B_to_A = [], []
     for _, row in conf_df.iterrows():
         A, B = row["Pair"]
@@ -63,23 +66,23 @@ def calculate_score(row):
 
 def merge_fbt_with_catalog(finaldf, catalogdf, price_tolerance):
     if finaldf.empty or "Pair" not in finaldf.columns:
-        print("No pairs to merge with catalog.")
+        logger.warning("No pairs to merge with catalog.")
         return pd.DataFrame()
     finaldf = finaldf[finaldf["Pair"].apply(lambda x: isinstance(x, tuple) and len(x) == 2)]
     if finaldf.empty:
-        print("No valid pairs after tuple check.")
+        logger.warning("No valid pairs after tuple check.")
         return pd.DataFrame()
     finaldf["skuid_A"] = finaldf["Pair"].apply(lambda x: x[0])
     finaldf["skuid_B"] = finaldf["Pair"].apply(lambda x: x[1])
     catalog_A = catalogdf.add_suffix("_A")
     merged_df = finaldf.merge(
-        catalog_A, left_on="skuid_A", right_on="sku_id_A", how="left"
+        catalog_A, left_on="skuid_A", right_on="skuid_A", how="left"
     )
     catalog_B = catalogdf.add_suffix("_B")
     merged_df = merged_df.merge(
-        catalog_B, left_on="skuid_B", right_on="sku_id_B", how="left"
+        catalog_B, left_on="skuid_B", right_on="skuid_B", how="left"
     )
-    print("Pairs after catalog merge:", len(merged_df))
+    logger.info("Pairs after catalog merge: %d", len(merged_df))
 
     # Filter by same l1
     # merged_df = merged_df.dropna(subset=["l1_A", "l1_B"])
@@ -91,7 +94,7 @@ def merge_fbt_with_catalog(finaldf, catalogdf, price_tolerance):
     ]
     
     
-    print("Pairs after l1 filter:", len(merged_df))
+    logger.info("Pairs after l1 filter: %d", len(merged_df))
 
     # Filter by price tolerance (+-30%)
     # merged_df = merged_df[
@@ -105,7 +108,7 @@ def merge_fbt_with_catalog(finaldf, catalogdf, price_tolerance):
     )
     ]
     
-    print("Pairs after price tolerance filter:", len(merged_df))
+    logger.info("Pairs after price tolerance filter: %d", len(merged_df))
 
     columns = (
         [col for col in merged_df.columns if col.endswith("_A")]
@@ -177,20 +180,22 @@ def run_fbt_pipeline(fbt_weights : dict , client : str):
     s3_path = os.getenv("S3_PATH", "s3://retail-search")
 
     # Load CSVs from S3 by client
-    catalog = load_csv_from_s3(s3_path, client, "catalog")
-    orderss= load_csv_from_s3(s3_path, client, "orders")
-    inventory = load_csv_from_s3(s3_path, client, "inventory")
+    catalog   = normalize_df(load_csv_from_s3(s3_path, client, "catalog"))
+    orderss   = normalize_df(load_csv_from_s3(s3_path, client, "orders"))
+    inventory = normalize_df(load_csv_from_s3(s3_path, client, "inventory"))
     
     inventorydf = inventory[inventory["stock_quantity"] >= 1]
-    catalogdf = catalog[catalog["sku_id"].isin(inventorydf["sku_id"])]
-    orderssdf = orderss[orderss["sku_id"].isin(inventorydf["sku_id"])]
-    print("Total orders:", orderssdf["order_id"].nunique())
-    print("Order items distribution:")
-    print(orderssdf.groupby("order_id")["sku_id"].count().value_counts())
+    catalogdf = catalog[catalog["skuid"].isin(inventorydf["skuid"])]
+    orderssdf = orderss[orderss["skuid"].isin(inventorydf["skuid"])]
+    logger.info("Total orders: %d", orderssdf["order_id"].nunique())
+    logger.info(
+    "Order items distribution:\n%s",
+    orderssdf.groupby("order_id")["skuid"].count().value_counts()
+    )
     
-    pairsdf = product_pairs(orderssdf.groupby("order_id")["sku_id"].apply(list))
-    print("Pairs generated:", len(pairsdf))
-    print(pairsdf.head())
+    pairsdf = product_pairs(orderssdf.groupby("order_id")["skuid"].apply(list))
+    logger.info("Pairs generated: %d", len(pairsdf))
+    logger.debug("Pairs sample:\n%s", pairsdf.head())
     supportdf = calculate_support(orderssdf, pairsdf)
     # supportdf.to_csv("supportdf_debug.csv", index=False)
     
@@ -198,35 +203,32 @@ def run_fbt_pipeline(fbt_weights : dict , client : str):
     
     # print("Pairs after support threshold:", len(supportdf))
     if supportdf.empty:
-        print("⚠️ No FBT pairs found")
+        logger.warning("No FBT pairs found")
         return pd.DataFrame()
     conf_df = calculate_confidence(orderssdf, supportdf)
     
     # print("Confidence df : ",conf_df)
     
     conf_df = conf_df[
-        (conf_df["Confidence(A→B)"] >= CONFIDENCE_MIN)
-        | (conf_df["Confidence(B→A)"] >= CONFIDENCE_MIN)
+    (conf_df["Confidence(A→B)"] >= CONFIDENCE_MIN)
+    | (conf_df["Confidence(B→A)"] >= CONFIDENCE_MIN)
     ]
-    print("After confidence:", len(conf_df))
-    # print("Pairs after confidence threshold:", len(conf_df))
+
     if conf_df.empty:
-        # print("⚠️ No FBT pairs after confidence filter")
         return pd.DataFrame()
-    
+
     liftdf = calculate_lift(orderssdf, conf_df)
+
     liftdf = liftdf[
         (liftdf["Lift(A→B)"] >= LIFT_MIN)
         | (liftdf["Lift(B→A)"] >= LIFT_MIN)
     ]
-    print("After lift:", len(liftdf))
-    # print("Lift df : ",liftdf)
-    
-    # print("Pairs after lift threshold:", len(liftdf))
+
+    logger.info("After lift: %d", len(liftdf))
+
     if liftdf.empty:
-        print("⚠️ No FBT pairs after lift filter")
+        logger.warning("No FBT pairs after lift filter")
         return pd.DataFrame()
-    
     
     finaldf = supportdf.merge(liftdf, on="Pair")
     finaldf["score"] = finaldf.apply(calculate_score, axis=1)
@@ -234,12 +236,12 @@ def run_fbt_pipeline(fbt_weights : dict , client : str):
     # print("Final df : ",finaldf.head(10))
     
     merged = merge_fbt_with_catalog(finaldf, catalogdf, price_tolerance=PRICE_TOLERANCE)
-    print("After merge:", len(merged))
+    logger.info("After merge: %d", len(merged))
     
     # print("Merged : ",merged.head(10))order
     
     if merged.empty:
-        print("⚠️ No FBT pairs survived catalog/price/l1 filter")
+        logger.warning("No FBT pairs survived catalog/price/l1 filter")
         return pd.DataFrame()
     merged["sorted_pair"] = merged.apply(
         lambda r: tuple(sorted([r["skuid_A"], r["skuid_B"]])), axis=1
@@ -268,5 +270,5 @@ def run_fbt_pipeline(fbt_weights : dict , client : str):
         grouped_docs.append(fbt_group_to_es_doc(group))
     # print("Grouped docs : ",grouped_docs)
     # Removed global FBT index write to avoid cross-client contamination.
-    print(f"✅ Pushed {len(grouped_docs)} FBT docs to ES")
+    logger.info("Pushed %d FBT docs to ES", len(grouped_docs))
     return {"data": df_to_es_docs(merged)}

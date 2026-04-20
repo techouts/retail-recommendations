@@ -7,11 +7,13 @@ from types import SimpleNamespace
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
-
+from .utils import normalize_df
 from ..utils.pipeline_utils import load_csv_from_s3, normalize
 from ..adapters.meili.indexer import push_to_meili
 from ..adapters.meili.client import client as meili_client
 from ..adapters.es.indexer import push_to_es
+import logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -66,10 +68,10 @@ def run_popular_categories_pipeline(PopularCategoryWeights: dict, client: str):
     # ------------------------------------------------------------------
     # Load
     # ------------------------------------------------------------------
-    catalog_df     = load_csv_from_s3(s3_path, client, "catalog")
-    analytics_df   = load_csv_from_s3(s3_path, client, "analytics")
-    fulfillment_df = load_csv_from_s3(s3_path, client, "fulfillment")
-    inventory_df   = load_csv_from_s3(s3_path, client, "inventory")
+    catalog_df     = normalize_df(load_csv_from_s3(s3_path, client, "catalog"))
+    analytics_df   = normalize_df(load_csv_from_s3(s3_path, client, "analytics"))
+    fulfillment_df = normalize_df(load_csv_from_s3(s3_path, client, "fulfillment"))
+    inventory_df   = normalize_df(load_csv_from_s3(s3_path, client, "inventory"))
   
   
     for df in [catalog_df, analytics_df, fulfillment_df, inventory_df]:
@@ -176,7 +178,9 @@ def run_popular_categories_pipeline(PopularCategoryWeights: dict, client: str):
     category_df = category_df[category_df["sku_count"] >= min_sku]
 
     if category_df.empty:
-        print("[WARN] No categories passed min_sku filter.")
+        logger.warning("No categories passed min_sku filter.")
+
+
         return []
 
     # ------------------------------------------------------------------
@@ -234,9 +238,12 @@ def run_popular_categories_pipeline(PopularCategoryWeights: dict, client: str):
     docs = final_categories[[
         "id", "category_l1", "category_l2", "category_l3",
         "category_score", "sku_count", "total_sales", "total_views","total_score"
+        
     ]].to_dict(orient="records")
 
-    print(f"[INFO] Pushing {len(docs)} popular category docs...")
+    logger.info("Pushing %d popular category docs...", len(docs))
+
+
 
   
     push_to_es(
@@ -275,7 +282,11 @@ def configure_popular_categories_index(tenant_id: str):
 
     index.update_filterable_attributes(["category_l1", "category_l2", "category_l3"])
 
-    print(f"[INFO] Index '{tenant_id}_popular_categories' configured.")
+    logger.info(
+    "Index '%s_popular_categories' configured.",
+    tenant_id)
+
+
 
 
 # ===========================================================================
@@ -295,7 +306,7 @@ class PopularCategoryService:
         try:
             configure_popular_categories_index(tenant_id)
         except Exception as e:
-            print(f"[WARN] Index configuration failed: {e}")
+            logger.warning("Index configuration failed: %s", e)
 
         return {"success": True, "count": len(result), "data": result}
 

@@ -4,7 +4,7 @@ from .api import popular_category
 from .api import trending
 from .api import dealofday , fbt , popular_brands
 from .api import s3_api
-
+from .api import new_arrvals
 
 router=APIRouter(prefix="/recommendations", tags=["Recommendations"])
 
@@ -51,4 +51,10 @@ router.include_router(
     s3_api.router,
     prefix="/s3",
     tags=["s3 data"]
+)
+
+router.include_router(
+    new_arrvals.router,
+    prefix="/new_arrvals",
+    tags=["new_arrvals"]
 )

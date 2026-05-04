@@ -48,7 +48,12 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
     logger.info(f"Ratings rows: {len(customer_rating)}")
 
     catalog["created_at"] = pd.to_datetime(catalog["created_at"], errors="coerce")
-    pmr["discount_enddate"] = pd.to_datetime(pmr["discount_enddate"], errors="coerce")
+    # pmr["discount_enddate"] = pd.to_datetime(pmr["discount_enddate"], errors="coerce")
+    pmr["discount_enddate"] = pd.to_datetime(
+    pmr["discount_enddate"],
+    errors="coerce",
+    dayfirst=True
+)
 
     def normalize(series):
         if series.max() == series.min():
@@ -56,10 +61,11 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
         return (series - series.min()) / (series.max() - series.min())
 
     # Filter PMR data
-    pmrdf = pmr[
-        (pmr["discount_enddate"].dt.date >= dt.today().date()) &
-        (pmr["discount_price"].between(dod_weights.min_discount_threshold, dod_weights.max_discount_threshold))
-    ].copy()
+    # pmrdf = pmr[
+    #     (pmr["discount_enddate"].dt.date >= dt.today().date()) &
+    #     (pmr["discount_price"].between(dod_weights.min_discount_threshold, dod_weights.max_discount_threshold))
+    # ].copy()
+    pmrdf = pmr.copy()
     logger.info(f"Today date: {dt.today().date()}")
     logger.debug(f"pmrdf:\n{pmrdf.head(100).to_string()}")
     
@@ -84,14 +90,38 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
     inventorydf = inventorydf[inventorydf["total_quantity"] >= dod_weights.min_stock]
     
     logger.debug(f"Inventory df 3:\n{inventorydf.head(10).to_string()}")
+    print("PMR:", len(pmrdf))
+    print("Catalog:", len(catalogdf))
+    print("Inventory:", len(inventorydf))
+    print("PMR:", len(pmrdf))
+    print("Catalog:", len(catalogdf))
+    print("Inventory:", len(inventorydf))
 
     # Analytics aggregation
     analyticsdf = analytics[analytics["skuid"].isin(inventorydf["skuid"])].copy()
     
     logger.debug(f"Analytics 1:\n{analyticsdf.head(10).to_string()}")
 
-    
+    analyticsdf.columns = analyticsdf.columns.str.lower().str.strip()
+
+        #  Rename columns to match pipeline expectation
+    analyticsdf.rename(columns={
+            "views": "view_count",
+            "view": "view_count",
+            "add_to_cart": "addtocart_count",
+            "addtocart": "addtocart_count",
+            "sku": "skuid",
+            "sku_id": "skuid"
+        }, inplace=True)
+
+        #  Ensure required columns exist
+    for col in ["skuid", "view_count", "addtocart_count"]:
+        if col not in analyticsdf.columns:
+                analyticsdf[col] = 0
+
     analyticsdf = analyticsdf.groupby("skuid")[["addtocart_count", "view_count"]].sum().reset_index()
+    #  Normalize column names
+    
     
     logger.debug(f"Analytics 2:\n{analyticsdf.head(10).to_string()}")
 

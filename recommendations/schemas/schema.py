@@ -38,3 +38,11 @@ class TrainFbtProductsRequest(BaseModel):
 class TrainPopularBrandsRequest(BaseModel):
     Client : str
     settings : dict
+
+class TrainNewArrivalsRequest(BaseModel):
+    Client : str
+    settings : dict
+
+class TrainBestSellersRequest(BaseModel):
+    Client : str
+    settings : dict

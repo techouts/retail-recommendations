@@ -81,13 +81,15 @@ def run_popular_brands(popular_brands_weights : dict , client : str):
               .merge(inventory_df, on="brand", how="outer")
 
     df = df.fillna(0)
-    
+    print("Before filter:", df.shape)
+    print(df[["brand", "total_orders", "avg_rating"]].head(10))
     # weights = PopularBrandWeights.objects.get(id=1)
     df = df[
         (df["total_orders"] >= weights.min_orders) &
         (df["avg_rating"] >= weights.min_rating)
     ]
-
+    print("After filter:", df.shape)
+    
     def normalize(col):
         return (col - col.min()) / (col.max() - col.min() + 1e-9)
 

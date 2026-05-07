@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from .api import trending,bestseller
 from .api import popular_category
 from .api import trending
-from .api import dealofday , fbt , popular_brands
+from .api import dealofday , fbt , popular_brands,new_arrivals
 from .api import s3_api
 
 
@@ -53,3 +53,8 @@ router.include_router(
     tags=["s3 data"]
 )
 
+router.include_router(
+    new_arrivals.router,
+    prefix="/new_arrivals",
+    tags=['new_arrivals']
+)

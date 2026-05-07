@@ -6,13 +6,24 @@ from pathlib import Path
 
 import pandas as pd
 
+# def normalize(series):
+#     min_val = series.min()
+#     max_val = series.max()
+    
+#     if max_val == min_val:
+#         return pd.Series([0.0] * len(series), index=series.index)
+    
+#     return (series - min_val) / (max_val - min_val)
 def normalize(series):
     min_val = series.min()
     max_val = series.max()
-    
-    if max_val == min_val:
+
+    if pd.isna(max_val) or pd.isna(min_val):
         return pd.Series([0.0] * len(series), index=series.index)
-    
+
+    if max_val == min_val:
+        return pd.Series([1.0] * len(series), index=series.index)
+
     return (series - min_val) / (max_val - min_val)
 
 

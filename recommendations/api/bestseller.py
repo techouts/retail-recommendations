@@ -3,6 +3,7 @@ from typing import List
 from ..services.bestseller_service import BestSellerService
 from fastapi import APIRouter, Depends
 from recommendations.security import fetch_rate_limit
+from ..schemas.schema import (TrainBestSellersRequest)
 
 
 router = APIRouter()

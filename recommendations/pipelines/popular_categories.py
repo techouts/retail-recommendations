@@ -136,7 +136,7 @@ def run_popular_categories_pipeline(PopularCategoryWeights: dict, client: str):
         .merge(wish_agg,  on="skuid", how="left")
         .fillna(0)
     )
-
+    print("Merged SKUs:", merged["skuid"].nunique())
     # ------------------------------------------------------------------
     # Weighted signals (time decay: 24h=0.5, 3d=0.3, 7d=0.2)
     # ------------------------------------------------------------------
@@ -156,11 +156,16 @@ def run_popular_categories_pipeline(PopularCategoryWeights: dict, client: str):
         normalize(merged["weighted_cart"])  * 0.2 +
         normalize(merged["weighted_wish"])  * 0.1
     ) * 100
-
+    print("Catalog columns:", catalog_df.columns)
+    print("Merged columns:", merged.columns)
+    print("Catalog SKUs:", catalog_df["skuid"].nunique())
+    print("Merged SKUs:", merged["skuid"].nunique())
     # ------------------------------------------------------------------
     # Join catalog
     # ------------------------------------------------------------------
     df = catalog_df.merge(merged, on="skuid", how="inner")
+    print("After merge SKUs:", df["skuid"].nunique())
+    print("After merge categories:", df["category_l2"].nunique())
 
     # ------------------------------------------------------------------
     # Category aggregation
@@ -174,8 +179,24 @@ def run_popular_categories_pipeline(PopularCategoryWeights: dict, client: str):
         total_sales =("weighted_sales", "sum"),
         total_views =("weighted_views", "sum"),
     ).reset_index()
+    print("Categories before filter:", category_df.shape)
     
-    category_df = category_df[category_df["sku_count"] >= min_sku]
+
+#  ADD THIS LINE HERE
+    print(category_df[["category_l2", "category_l3", "sku_count"]]
+        .sort_values(by="sku_count", ascending=False)
+        .head(10))
+    #  FILTER
+    
+    # category_df = category_df[category_df["sku_count"] >= min_sku]
+    filtered_df = category_df[category_df["sku_count"] >= min_sku]
+
+    if filtered_df.empty:
+        print(" No categories passed filter → using fallback")
+        filtered_df = category_df
+
+    category_df = filtered_df
+    print("Categories after filter:", category_df.shape)
 
     if category_df.empty:
         logger.warning("No categories passed min_sku filter.")

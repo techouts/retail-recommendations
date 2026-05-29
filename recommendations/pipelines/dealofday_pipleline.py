@@ -70,9 +70,15 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
     logger.debug(f"pmrdf:\n{pmrdf.head(100).to_string()}")
     
     # Filter catalog by L3 and PMR SKUs
-    catalogdf = catalog[
-        (catalog["category_l3"].isin(levels)) & (catalog["skuid"].isin(pmrdf["skuid"]))
-    ].copy()
+    if levels:
+        catalogdf = catalog[
+            (catalog["category_l3"].isin(levels)) &
+            (catalog["skuid"].isin(pmrdf["skuid"]))
+        ].copy()
+    else:
+        catalogdf = catalog[
+            catalog["skuid"].isin(pmrdf["skuid"])
+        ].copy()
     catalogdf["is_new"] = (dt.today() - catalogdf["created_at"]).dt.days <= dod_weights.new_product_window_days
 
     logger.debug(f"catalog df:\n{catalogdf.head(10).to_string()}")
@@ -222,7 +228,14 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
             else:
                 pick = top_by_score.head(per_cat)
             final_list.append(pick)
-
+    print("LEVELS:", levels)
+    print("CATALOGDF:", catalogdf.shape)
+    print("INVENTORYDF:", inventorydf.shape)
+    print("ANALYTICSDF:", analyticsdf.shape)
+    print("RATINGDF:", ratingdf.shape)
+    print("RESULTDF:", resultdf.shape)
+    print("FILTERED:", filtered.shape)
+    print("FINAL_LIST:", len(final_list))
     final_df = pd.concat(final_list, ignore_index=True) if final_list else pd.DataFrame()
     
     logger.info(f"Final df columns: {list(final_df.columns)}")
@@ -253,16 +266,18 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
         "view_count": "views",
         "stock_status": "availability"
     })
-
+    if final_df.empty:
+        logger.warning("Final dataframe is empty")
+        return {"data": []}
 
     es_df = final_df[[
-        'sku', 'title', 'l1', 'l2', 'l3', 'brand', 'availability',
-        'is_new', 'name', 'price', 'pmr_price', 'pmr_discount',
-        'discount_enddate', 'total_quantity', 'addtocart', 'views',
-        'review_count', 'avg_rating', 'relaxed_review',
-        'normalized_views', 'normalized_addtocart',
-        'normalized_rating', 'normalized_reviews', 'score'
-    ]].copy()
+    'sku', 'title', 'l1', 'l2', 'l3', 'brand', 'availability',
+    'is_new', 'pmr_discount',
+    'discount_enddate', 'total_quantity', 'addtocart', 'views',
+    'review_count', 'avg_rating', 'relaxed_review',
+    'normalized_views', 'normalized_addtocart',
+    'normalized_rating', 'normalized_reviews', 'score'
+]].copy()
     
     
     docs = df_to_es_docs(es_df)

@@ -11,7 +11,7 @@ bestSellerService = BestSellerService()
 
 
 # TRAIN BEST SELLERS
-@router.post("/train")
+@router.post("/train/")
 def train_best_seller(payload: dict):
 
     client = payload.get("client")

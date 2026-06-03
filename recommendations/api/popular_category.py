@@ -8,7 +8,7 @@ from recommendations.security import fetch_rate_limit
 router = APIRouter()
 bestSellerService = PopularCategoryService()
 
-@router.post("/train")
+@router.post("/train/")
 def train_popular_category(payload: dict):
 
     client = payload.get("client")

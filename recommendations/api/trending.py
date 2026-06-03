@@ -8,7 +8,7 @@ router = APIRouter()
 service = TrendingService()
 
 
-@router.post("/train")
+@router.post("/train/")
 def train_trending(payload:TrainTrendingRequest):
     try:
         result = service.trainTrendingProducts(

@@ -8,7 +8,7 @@ from recommendations.security import fetch_rate_limit
 router=APIRouter()
 dealOfDayService=DealOfDayService()
 
-@router.post("/train")
+@router.post("/train/")
 def train_dealofday(payload: TrainDodRequest):
 
     client = payload.Client

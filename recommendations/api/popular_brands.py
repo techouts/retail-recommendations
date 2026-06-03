@@ -7,7 +7,7 @@ router = APIRouter()
 
 pbService = PopularBrandsService()
 
-@router.post("/train")
+@router.post("/train/")
 def train_popular_brands(payload : TrainPopularBrandsRequest):
     client = payload.Client
     settings = payload.settings

@@ -3,6 +3,7 @@ from typing import List
 from ..services.bestseller_service import BestSellerService
 from fastapi import APIRouter, Depends
 from recommendations.security import fetch_rate_limit
+from ..schemas.schema import (TrainBestSellersRequest)
 
 
 router = APIRouter()
@@ -10,10 +11,10 @@ bestSellerService = BestSellerService()
 
 
 # TRAIN BEST SELLERS
-@router.post("/train")
+@router.post("/train/")
 def train_best_seller(payload: dict):
 
-    client = payload.get("Client")
+    client = payload.get("client")
     settings = payload.get("settings", {})
     time_window = payload.get("time_window", {})
 

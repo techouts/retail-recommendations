@@ -7,7 +7,10 @@ from ..adapters.meili.indexer import push_to_meili , push_to_meili_fbt , push_to
 from types import SimpleNamespace
 from itertools import combinations
 from collections import Counter
+from .utils import normalize_df
 import re
+import logging
+logger = logging.getLogger(__name__)
 from ..es_utils.es_utils import push_to_es
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -29,57 +32,76 @@ def run_popular_brands(popular_brands_weights : dict , client : str):
     s3_path = os.getenv("S3_PATH", "s3://retail-search")
 
     # Load CSVs from S3 by client
-    catalog = load_csv_from_s3(s3_path, client, "catalog")
-    orders = load_csv_from_s3(s3_path, client, "orders")
-    analytics = load_csv_from_s3(s3_path, client, "analytics")
-    customer_rating = load_csv_from_s3(s3_path, client, "customer_rating")
-    inventory = load_csv_from_s3(s3_path, client, "inventory")
+    catalog         = normalize_df(load_csv_from_s3(s3_path, client, "catalog"))
+    orders          = normalize_df(load_csv_from_s3(s3_path, client, "orders"))
+    analytics       = normalize_df(load_csv_from_s3(s3_path, client, "analytics"))
+    customer_rating = normalize_df(load_csv_from_s3(s3_path, client, "customer_rating"))
+    inventory       = normalize_df(load_csv_from_s3(s3_path, client, "inventory"))
 
     
-    orders = orders.merge(catalog[["sku_id", "brand"]], on="sku_id", how="left")
-    analytics = analytics.merge(catalog[["sku_id", "brand"]], on="sku_id", how="left")
-    customer_rating = customer_rating.merge(catalog[["sku_id", "brand"]], on="sku_id", how="left")
-    inventory = inventory.merge(catalog[["sku_id", "brand"]], on="sku_id", how="left")
+    orders = orders.merge(catalog[["skuid", "brand"]], on="skuid", how="left")
+    analytics = analytics.merge(catalog[["skuid", "brand"]], on="skuid", how="left")
+    customer_rating = customer_rating.merge(catalog[["skuid", "brand"]], on="skuid", how="left")
+    inventory = inventory.merge(catalog[["skuid", "brand"]], on="skuid", how="left")
     
     orders_df = orders.groupby("brand").agg(
         total_orders=("order_id", "count")
     ).reset_index()
     
-    print("catalog df : ",orders_df)
+    logger.info("Catalog df shape: %s", orders_df.shape)
+
     
     analytics_df = analytics.groupby("brand").agg(
         total_views=("view_count", "sum"),
         total_cart=("addtocart_count", "sum")
     ).reset_index()
     
-    print("Analytics df : ",analytics_df)
+    logger.info("Analytics df shape: %s", analytics_df.shape)
+
     
     ratings_df = customer_rating.groupby("brand").agg(
         avg_rating=("rating", "mean")
     ).reset_index()
     
-    print("Rating df : ",ratings_df)
+    logger.info("Ratings df shape: %s", ratings_df.shape)
+
     
     inventory_df = inventory[inventory["stock_quantity"] > 0]
 
     inventory_df = inventory_df.groupby("brand").agg(
-        available_products=("sku_id", "count")
+        available_products=("skuid", "count")
     ).reset_index()
     
-    print("Inventory df : ",inventory_df)
+    logger.info("Inventory df shape: %s", inventory_df.shape)
+
+
     
     df = orders_df.merge(analytics_df, on="brand", how="outer") \
               .merge(ratings_df, on="brand", how="outer") \
               .merge(inventory_df, on="brand", how="outer")
 
     df = df.fillna(0)
-    
-    # weights = PopularBrandWeights.objects.get(id=1)
+    print("Total brands before filter:", len(df))
+    print("Unique brands before filter:", df["brand"].nunique())
+
+    print(
+        df[["brand", "total_orders", "avg_rating"]]
+        .sort_values(["avg_rating", "total_orders"], ascending=False)
+    )
+
     df = df[
         (df["total_orders"] >= weights.min_orders) &
         (df["avg_rating"] >= weights.min_rating)
     ]
 
+    print("Total brands after filter:", len(df))
+    print("Unique brands after filter:", df["brand"].nunique())
+
+    print(
+        df[["brand", "total_orders", "avg_rating"]]
+        .sort_values(["avg_rating", "total_orders"], ascending=False)
+    )
+    
     def normalize(col):
         return (col - col.min()) / (col.max() - col.min() + 1e-9)
 
@@ -100,7 +122,7 @@ def run_popular_brands(popular_brands_weights : dict , client : str):
     df = df.sort_values(by="score", ascending=False)
     df["rank"] = range(1, len(df) + 1)
     
-    print("Df : ",df.head(10))
+    logger.debug("DF sample:\n%s", df.head(10))
     
     docs = []
 
@@ -119,17 +141,18 @@ def run_popular_brands(popular_brands_weights : dict , client : str):
         docs.append(doc)
         
         
-    #   --- meili search ---    
+    # #   --- meili search ---    
     # push_to_meili_popular_brands(
     #         docs=docs,
     #         index_name=f"{client}_popular_brands"
     #     )
     # return docs
     
+    
     # --- es ---    
     if not df.empty:
         docs = df_to_es_docs(df)
-        push_to_es(docs=docs, ALIAS_NAME="popular_brands", INDEX_PREFIX="popular-brands")
+        push_to_es(docs=docs, ALIAS_NAME=f"{client}_popular_brands", INDEX_PREFIX=f"{client}_popular-brands")
 
     return docs
         

@@ -1,3 +1,5 @@
+from itertools import count
+
 from ..exceptions.exceptions import BadRequestException , PipelineException
 from ..pipelines.fbt_pipeline import run_fbt_pipeline
 from recommendations.adapters.meili.searcher import search_meili 
@@ -17,9 +19,11 @@ class FrequentlyBoughtTogetherService:
     def trainFrequentlyBoughtTogether(self,fbt_settings:dict,client:str):
         try:
             data = run_fbt_pipeline(fbt_settings  , client )
-            return {    
+            return {
                 "success": True,
-                "data":data
+                "message": "fbt training complete",
+                "client": client,
+                "data": data  
             }
         except PipelineException as e:
             raise PipelineException(f"Fbt pipeline failed : {str(e)}")

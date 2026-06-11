@@ -7,7 +7,7 @@ router = APIRouter()
 
 pbService = PopularBrandsService()
 
-@router.post("/train")
+@router.post("/train/")
 def train_popular_brands(payload : TrainPopularBrandsRequest):
     client = payload.Client
     settings = payload.settings
@@ -18,7 +18,7 @@ def train_popular_brands(payload : TrainPopularBrandsRequest):
 @router.get("/popular_brands")
 def get_popular_brands(
     brand: str = Query(...),
-    index_name: str = Query(default="popular_brands"),
+    index_name: str = Query(default="ss3_popular_brands"),
     top_n: int = Query(default=5, ge=1, le=50),
     _: None = Depends(fetch_rate_limit)
 ):

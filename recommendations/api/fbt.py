@@ -8,7 +8,7 @@ router = APIRouter()
 # router=ApiRouter(include)
 fbtService = FrequentlyBoughtTogetherService()
 
-@router.post("/train")
+@router.post("/train/")
 def train_fbt(payload:TrainFbtProductsRequest):
     client = payload.Client
     settings = payload.settings

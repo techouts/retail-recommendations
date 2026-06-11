@@ -12,7 +12,8 @@ from ..schemas.pipeline_schema import TrendingWeightsModel
 from ..utils.pipeline_utils import load_csv_from_s3, normalize
 # from ..adapters.meili.indexer import push_to_meili
 from ..adapters.es.indexer import push_to_es
-
+import os
+from .utils import normalize_df
 
 logger = logging.getLogger(__name__)
 
@@ -56,37 +57,14 @@ def deep_clean(obj: Any) -> Any:
     return obj
 
 
-# ─────────────────────────────────────────────
-# 3. Data loading and normalisation
-# ─────────────────────────────────────────────
-
-_COLUMN_ALIASES = {
-    "sku_id":    "skuid",
-    "timestamp": "created_at",
-    "date":      "created_at",
-    "createdat": "created_at",
-}
-
-_DATETIME_COLS = {"created_at"}
-
-
-def _normalise_df(df: pd.DataFrame) -> pd.DataFrame:
-    """Strip, lowercase, and unify column names."""
-    df.columns = df.columns.str.strip().str.lower()
-    df = df.rename(columns={k: v for k, v in _COLUMN_ALIASES.items() if k in df.columns})
-    for col in _DATETIME_COLS:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce")
-    return df
-
 
 def load_and_normalise(client: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Load all source CSVs and normalise column names/types."""
     s3_path = os.getenv("S3_PATH", "s3://retail-search")
-    catalog_df     = _normalise_df(load_csv_from_s3(s3_path, client, "catalog"))
-    analytics_df   = _normalise_df(load_csv_from_s3(s3_path, client, "analytics"))
-    fulfillment_df = _normalise_df(load_csv_from_s3(s3_path, client, "fulfillment"))
-    inventory_df   = _normalise_df(load_csv_from_s3(s3_path, client, "inventory"))
+    catalog_df     = normalize_df(load_csv_from_s3(s3_path, client, "catalog"))
+    analytics_df   = normalize_df(load_csv_from_s3(s3_path, client, "analytics"))
+    fulfillment_df = normalize_df(load_csv_from_s3(s3_path, client, "fulfillment"))
+    inventory_df   = normalize_df(load_csv_from_s3(s3_path, client, "inventory"))
 
     logger.info(
         "Loaded rows — catalog=%d analytics=%d fulfillment=%d inventory=%d",
@@ -185,6 +163,10 @@ _SIGNAL_PERIODS = {
     "sales": ["24h", "3d", "7d"],
     "views": ["24h", "3d", "7d"],
     "cart":  ["24h", "3d", "7d"],
+
+
+
+    
     "wish":  ["24h", "3d", "7d"],
 }
 
@@ -362,7 +344,12 @@ def apply_caps_and_fill(
 
 _MEILI_BASE_COLS = [
     "skuid", "display_title", "brand", "selling_price",
-    "trending_score", "is_trending", "is_threshold_relaxed", "image_urls",
+    "trending_score", "is_trending", "is_threshold_relaxed", "image_urls","internal_sales_24h", "internal_sales_3d", "internal_sales_7d",
+    "internal_views_24h", "internal_views_3d", "internal_views_7d",
+    "internal_cart_24h", "internal_cart_3d", "internal_cart_7d",
+    "internal_wish_24h", "internal_wish_3d", "internal_wish_7d",
+    "business_sales_weight", "business_views_weight",
+    "business_cart_weight", "business_wish_weight"
 ]
 
 def build_meili_docs(
@@ -427,9 +414,13 @@ def run_trending_pipeline(trending_weights: dict, client: str) -> list[dict]:
 
     # ── 5. Score ──
     scored = score_products(merged, weights)
+    
+    for key, value in trending_weights.items():
+        scored[key] = value
 
     # ── 6. Merge with catalog ──
     catalog_with_metrics = catalog_df.merge(scored, on="skuid", how="inner")
+    catalog_with_metrics["display_title"] = catalog_with_metrics["product_name"]
     if catalog_with_metrics.empty:
         logger.warning("No products survived catalog merge — aborting pipeline.")
         return []
@@ -456,3 +447,5 @@ def run_trending_pipeline(trending_weights: dict, client: str) -> list[dict]:
     logger.info("Pipeline complete — pushed %d documents for client='%s'", len(docs), client)
 
     return docs
+
+

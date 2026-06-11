@@ -120,3 +120,22 @@ def get_eligible_skus(df: pd.DataFrame, min_stock:int=2):
     eligible_products=stock_totals.loc[stock_totals["stock_quantity"]>min_stock,"skuid"]
     logger.info("Eligible skuids (stock > %d): %d", min_stock, len(eligible_products))
     return eligible_products
+
+_COLUMN_ALIASES = {
+    "sku_id":    "skuid",
+    "timestamp": "created_at",
+    "date":      "created_at",
+    "createdat": "created_at",
+}
+
+_DATETIME_COLS = {"created_at"}
+
+
+def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Strip, lowercase, and unify column names."""
+    df.columns = df.columns.str.strip().str.lower()
+    df = df.rename(columns={k: v for k, v in _COLUMN_ALIASES.items() if k in df.columns})
+    for col in _DATETIME_COLS:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
+    return df

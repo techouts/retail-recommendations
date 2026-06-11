@@ -65,7 +65,12 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
     #     (pmr["discount_enddate"].dt.date >= dt.today().date()) &
     #     (pmr["discount_price"].between(dod_weights.min_discount_threshold, dod_weights.max_discount_threshold))
     # ].copy()
+    
     pmrdf = pmr.copy()
+    pmrdf = pmrdf.sort_values("discount_price", ascending=False)
+    pmrdf = pmrdf.drop_duplicates(subset=["skuid"], keep="first")
+    pmrdf["discount_enddate"] = pd.to_datetime(pmrdf["discount_enddate"], errors="coerce", dayfirst=True)
+    pmrdf = pmrdf[pmrdf["discount_enddate"].dt.date >= dt.today().date()]
     logger.info(f"Today date: {dt.today().date()}")
     logger.debug(f"pmrdf:\n{pmrdf.head(100).to_string()}")
     
@@ -209,33 +214,58 @@ def run_dod_pipeline(DealOfDayWeights : dict , client : str , levels : list):
         ) * 100
 
         final_df = final_df[final_df["score"] >= dod_weights.final_score_threshold].copy()
-    
+        print("After Score Filter:", len(final_df))
     logger.debug(f"Final df:\n{final_df.head(10).to_string()}")
 
     # L3 capped selection
     final_list = []
     if not final_df.empty:
-        total_to_show = min(len(final_df), 12)
+        total_to_show = min(len(final_df), 50)
+        
         l3_groups = final_df["category_l3"].unique()
         per_cat = max(1, round(total_to_show / len(l3_groups)))
 
         for l3 in l3_groups:
             subset = final_df[final_df["category_l3"] == l3].copy()
+
+            print(f"L3={l3}")
+            print("Subset Count:", len(subset))
+
             new_prod = subset[subset["is_new"]]
             top_by_score = subset.sort_values(by="score", ascending=False)
+
             if not new_prod.empty:
-                pick = pd.concat([new_prod.head(1), top_by_score.head(per_cat - 1)]).drop_duplicates("skuid")
+                pick = pd.concat([
+                    new_prod.head(1),
+                    top_by_score.head(per_cat - 1)
+                ]).drop_duplicates("skuid")
             else:
                 pick = top_by_score.head(per_cat)
+
+            print("Pick Count:", len(pick))
+            print(pick[["skuid", "score"]])
+
             final_list.append(pick)
-    print("LEVELS:", levels)
-    print("CATALOGDF:", catalogdf.shape)
-    print("INVENTORYDF:", inventorydf.shape)
-    print("ANALYTICSDF:", analyticsdf.shape)
-    print("RATINGDF:", ratingdf.shape)
-    print("RESULTDF:", resultdf.shape)
-    print("FILTERED:", filtered.shape)
-    print("FINAL_LIST:", len(final_list))
+
+            print("Final List Length:", len(final_list))
+            print("Before Final Selection:", len(final_df))
+            print("Score Stats:")
+            print(final_df["score"].describe())
+
+            print("Top Scores:")
+            print(
+                final_df[["skuid", "score"]]
+                .sort_values("score", ascending=False)
+                .head(20)
+            )
+            print("LEVELS:", levels)
+            print("CATALOGDF:", catalogdf.shape)
+            print("INVENTORYDF:", inventorydf.shape)
+            print("ANALYTICSDF:", analyticsdf.shape)
+            print("RATINGDF:", ratingdf.shape)
+            print("RESULTDF:", resultdf.shape)
+            print("FILTERED:", filtered.shape)
+            print("FINAL_LIST:", len(final_list))
     final_df = pd.concat(final_list, ignore_index=True) if final_list else pd.DataFrame()
     
     logger.info(f"Final df columns: {list(final_df.columns)}")

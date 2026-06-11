@@ -1,3 +1,5 @@
+from itertools import count
+
 from ..exceptions.exceptions import BadRequestException , PipelineException
 from ..pipelines.fbt_pipeline import run_fbt_pipeline
 from recommendations.adapters.meili.searcher import search_meili 

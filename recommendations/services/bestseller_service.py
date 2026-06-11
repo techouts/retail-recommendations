@@ -6,7 +6,7 @@ from ..pipelines.best_seller_pipeline import run_bestseller_pipeline
 from recommendations.adapters.es.searcher import search_es
 
 class BestSellerService:
-    ALIAS="best_sellers"
+    ALIAS="best_sellers_retail"
     def train_best_sellers(self, weights: dict, time_window: dict, client: str):
         if not client:
             raise ValueError("client is required")
@@ -29,7 +29,7 @@ class BestSellerService:
     # HELPER: GET INDEX NAME
     # -----------------------------
     def _get_index_name(self, client: str):
-        return f"{client}_best_sellers"
+        return f"{client}_best_sellers_retail"
 
     # -----------------------------
     # FETCH ALL
@@ -48,7 +48,7 @@ class BestSellerService:
     #         raise Exception(f"Failed to fetch best sellers: {str(e)}")
     def fetch_all(self, client: str, size: int = 20):
         try:
-            alias_name = f"{client}_best_sellers"
+            alias_name = f"{client}_best_sellers_retail"
 
             result = search_es(alias_name, limit=size, offset=0)
 
@@ -65,7 +65,7 @@ class BestSellerService:
     #         raise ValueError("l3 list is required")
 
     #     try:
-    #         alias_name = f"{client}_best_sellers"
+    #         alias_name = f"{client}_best_sellers_retail"
 
     #         filters = f"category_l3 IN {json.dumps(l3_list)}"
 
@@ -86,7 +86,7 @@ class BestSellerService:
             raise ValueError("l3 list is required")
 
         try:
-            alias_name = f"{client}_best_sellers"
+            alias_name = f"{client}_best_sellers_retail"
 
             query = {
                 "query": {
@@ -135,7 +135,7 @@ class BestSellerService:
             raise ValueError("skuid list is required")
 
         try:
-            alias_name = f"{client}_best_sellers"
+            alias_name = f"{client}_best_sellers_retail"
 
             query = {
                 "query": {
